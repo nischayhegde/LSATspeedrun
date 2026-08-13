@@ -29,7 +29,7 @@ import { hashUnit } from './map-urban-plan'
  * reads as scaled-up boxes.
  */
 
-export type FacadeFamily = 'brick' | 'stone' | 'render' | 'timber' | 'glass' | 'concrete' | 'plank' | 'civic'
+export type FacadeFamily = 'brick' | 'stone' | 'render' | 'timber' | 'glass' | 'concrete' | 'plank' | 'civic' | 'townhouse'
 
 export type FacadeRegion = 'city' | 'nation' | 'ocean' | 'continent' | 'orbit'
 
@@ -51,18 +51,17 @@ export type FacadeRecord = {
 // ---------------------------------------------------------------------------
 
 /**
- * Four columns by two rows of 256px cells. Eight families is exactly what the
- * five regions need between them, and a 1024x512 albedo is small enough that
- * the whole material system costs less texture memory than a single one of the
- * ground textures this scene already uploads per region.
+ * Four columns by three rows of 256px cells. Nine families (the original eight
+ * plus the Old Quarter townhouse) fit a 1024x768 albedo, still smaller than a
+ * single ground texture this scene already uploads per region.
  */
 const ATLAS_COLS = 4
-const ATLAS_ROWS = 2
+const ATLAS_ROWS = 3
 const CELL = 256
 
-const FAMILY_ORDER: FacadeFamily[] = ['brick', 'stone', 'render', 'timber', 'glass', 'concrete', 'plank', 'civic']
+const FAMILY_ORDER: FacadeFamily[] = ['brick', 'stone', 'render', 'timber', 'glass', 'concrete', 'plank', 'civic', 'townhouse']
 const FAMILY_INDEX: Record<FacadeFamily, number> = {
-  brick: 0, stone: 1, render: 2, timber: 3, glass: 4, concrete: 5, plank: 6, civic: 7,
+  brick: 0, stone: 1, render: 2, timber: 3, glass: 4, concrete: 5, plank: 6, civic: 7, townhouse: 8,
 }
 
 /**
@@ -212,11 +211,11 @@ function drawGlazing(context: Painter, layer: Layer, x: number, y: number, width
 const OPENING_GLOW = [236, 104, 192, 46]
 
 const BASE_ALBEDO: Record<FacadeFamily, number> = {
-  brick: 132, stone: 120, render: 200, timber: 205, glass: 116, concrete: 178, plank: 150, civic: 202,
+  brick: 132, stone: 120, render: 200, timber: 205, glass: 116, concrete: 178, plank: 150, civic: 202, townhouse: 118,
 }
 
 const BASE_ROUGH: Record<FacadeFamily, number> = {
-  brick: 240, stone: 220, render: 205, timber: 185, glass: 40, concrete: 210, plank: 175, civic: 212,
+  brick: 240, stone: 220, render: 205, timber: 185, glass: 40, concrete: 210, plank: 175, civic: 212, townhouse: 228,
 }
 
 function paintBrick(context: Painter, layer: Layer, random: () => number) {
@@ -452,6 +451,60 @@ function paintCivic(context: Painter, layer: Layer, random: () => number) {
   }
 }
 
+/**
+ * Narrow-frontage city house: 3–4 storeys, stoop, party wall. Not a reskin of
+ * `brick` — the bays are half as wide, the openings are taller, and the ground
+ * floor of each tile is a door and steps rather than another sash.
+ */
+function paintTownhouse(context: Painter, layer: Layer, random: () => number) {
+  const courses = 28
+  const courseHeight = CELL / courses
+  for (let course = 0; course < courses; course += 1) {
+    const shift = (course % 2) * 10
+    for (let index = 0; index < 13; index += 1) {
+      const tone = 108 + Math.round(random() * 38)
+      context.fillStyle = ink(layer, grey(tone), 214 + Math.round(random() * 16))
+      tileFill(context, index * 20 + shift + 1, course * courseHeight + 1, 18, courseHeight - 2)
+    }
+  }
+  mottle(context, layer, random, { count: 70, low: 60, high: 160, alpha: .08, size: 18 })
+  // Party-wall piers: the shared wall reads as a dark vertical, not a gap.
+  context.fillStyle = ink(layer, grey(78), 236)
+  tileFill(context, 0, 0, 10, CELL)
+  tileFill(context, CELL - 10, 0, 10, CELL)
+  for (let storey = 0; storey < 2; storey += 1) {
+    const oy = storey * 128
+    context.fillStyle = ink(layer, grey(168), 200)
+    tileFill(context, 10, oy + 118, CELL - 20, 6)
+    for (let bay = 0; bay < 2; bay += 1) {
+      const ox = bay * 128
+      const glow = OPENING_GLOW[(storey * 2 + bay + 1) % 4]
+      if (storey === 1 && bay === 0) {
+        context.fillStyle = ink(layer, grey(72), 190)
+        tileFill(context, ox + 44, oy + 28, 40, 78)
+        context.fillStyle = ink(layer, grey(48), 210)
+        tileFill(context, ox + 48, oy + 32, 32, 62)
+        context.fillStyle = ink(layer, grey(186), 168)
+        tileFill(context, ox + 38, oy + 92, 52, 10)
+        tileFill(context, ox + 42, oy + 100, 44, 8)
+        tileFill(context, ox + 48, oy + 106, 32, 8)
+        streak(context, layer, ox + 40, oy + 110, 48, 16, 70, .28)
+      } else {
+        context.fillStyle = ink(layer, grey(176), 210)
+        tileFill(context, ox + 46, oy + 14, 36, 8)
+        context.fillStyle = ink(layer, grey(58), 246)
+        tileFill(context, ox + 50, oy + 22, 28, 82)
+        drawGlazing(context, layer, ox + 52, oy + 24, 24, 78, glow, {
+          glass: grey(50), glassRough: 58, frame: grey(188), frameRough: 124, transoms: 3,
+        })
+        context.fillStyle = ink(layer, grey(190), 196)
+        tileFill(context, ox + 46, oy + 104, 36, 6)
+        streak(context, layer, ox + 48, oy + 110, 32, 14, 68, .26)
+      }
+    }
+  }
+}
+
 function paintCell(context: Painter, family: FacadeFamily, layer: Layer) {
   const random = makeRandom(FAMILY_INDEX[family] * 9176 + 2411)
   context.fillStyle = ink(layer, grey(BASE_ALBEDO[family]), BASE_ROUGH[family])
@@ -463,6 +516,7 @@ function paintCell(context: Painter, family: FacadeFamily, layer: Layer) {
   else if (family === 'glass') paintGlass(context, layer, random)
   else if (family === 'concrete') paintConcrete(context, layer, random)
   else if (family === 'plank') paintPlank(context, layer, random)
+  else if (family === 'townhouse') paintTownhouse(context, layer, random)
   else paintCivic(context, layer, random)
 }
 
@@ -770,11 +824,71 @@ function roofMaterial(key: 'cap' | 'pitched' | 'stepped') {
   return created
 }
 
+/**
+ * Unit gable: eaves at x=±0.5, ridge along z at (0, 1, ±0.5).
+ *
+ * The old 4-sided cone * 45° put vertices at (±w/2, ±w/2) and (±d/2, ±d/2) —
+ * a rhombus with gaps on the long axis and overhang on the short. This prism
+ * matches the plan rectangle. Scale (width, rise, depth) for a ridge along
+ * depth; swap xz and add 90° when width is the long axis. Party walls stay
+ * flush to `width`.
+ */
+function createGableRoofGeometry() {
+  const hw = .5
+  const hd = .5
+  const geometry = new THREE.BufferGeometry()
+  const positions = new Float32Array([
+    -hw, 0, -hd, -hw, 0, hd, 0, 1, hd, 0, 1, -hd,
+    hw, 0, hd, hw, 0, -hd, 0, 1, -hd, 0, 1, hd,
+    -hw, 0, hd, hw, 0, hd, 0, 1, hd,
+    hw, 0, -hd, -hw, 0, -hd, 0, 1, -hd,
+  ])
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex([
+    0, 1, 2, 0, 2, 3,
+    4, 5, 6, 4, 6, 7,
+    8, 9, 10,
+    11, 12, 13,
+  ])
+  geometry.computeVertexNormals()
+  return geometry
+}
+
 const sharedRoofGeometry = {
   box: new THREE.BoxGeometry(1, 1, 1),
-  cone: new THREE.ConeGeometry(1, 1, 4),
+  gable: createGableRoofGeometry(),
 }
 Object.values(sharedRoofGeometry).forEach((geometry) => { geometry.userData.mapShared = true })
+
+/**
+ * Plan-space eaves of the pitched gable after the long-axis scale/rotation.
+ * Footprint is the building rectangle: ⊆ plan, coverage 100%.
+ */
+export function pitchedRoofPlanCheck(width: number, depth: number) {
+  const hw = width / 2
+  const hd = depth / 2
+  const eaves: Array<[number, number]> = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]
+  const longAlongDepth = depth >= width
+  const sx = longAlongDepth ? width : depth
+  const sz = longAlongDepth ? depth : width
+  const rot = longAlongDepth ? 0 : Math.PI / 2
+  const cos = Math.cos(rot)
+  const sin = Math.sin(rot)
+  const transformed = ([[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5]] as Array<[number, number]>).map(([x, z]) => {
+    const x2 = x * sx
+    const z2 = z * sz
+    return [x2 * cos - z2 * sin, x2 * sin + z2 * cos] as [number, number]
+  })
+  const contained = transformed.every(([x, z]) => Math.abs(x) <= hw + 1e-9 && Math.abs(z) <= hd + 1e-9)
+  const roofMinX = Math.min(...transformed.map((p) => p[0]))
+  const roofMaxX = Math.max(...transformed.map((p) => p[0]))
+  const roofMinZ = Math.min(...transformed.map((p) => p[1]))
+  const roofMaxZ = Math.max(...transformed.map((p) => p[1]))
+  const overlapW = Math.max(0, Math.min(hw, roofMaxX) - Math.max(-hw, roofMinX))
+  const overlapD = Math.max(0, Math.min(hd, roofMaxZ) - Math.max(-hd, roofMinZ))
+  const coverage = width * depth > 0 ? (overlapW * overlapD) / (width * depth) : 0
+  return { width, depth, eaves, transformed, contained, coverage, longAlongDepth }
+}
 
 // ---------------------------------------------------------------------------
 // Region character
@@ -793,8 +907,11 @@ export function familyForRegion(region: FacadeRegion, seed: number, options?: { 
     // rather than left to the dice.
     if (options?.civic) return 'civic'
     if (height < 1.75 && roll > .86) return 'timber'
-    if (roll < .58) return 'brick'
-    if (roll < .8) return 'stone'
+    // Townhouses are the ordinary inner-ward house: narrow, 3–4 storeys, stoop.
+    // Brick used to win 58% of city rolls and there was no townhouse type.
+    if (height >= 2.15 && height < 4.2 && roll < .5) return 'townhouse'
+    if (roll < .28) return 'brick'
+    if (roll < .54) return 'stone'
     return 'render'
   }
   if (region === 'nation') {
@@ -856,6 +973,7 @@ const REGION_TONE: Record<FacadeRegion, { drift: number; palette: Partial<Record
       // sit just under one and a tint picked to look right on its own comes out
       // as mud on the wall.
       brick: [.038, .3, .5],
+      townhouse: [.03, .34, .42],
       stone: [.095, .13, .64],
       render: [.1, .16, .7],
       timber: [.07, .2, .52],
@@ -948,6 +1066,7 @@ export function facadeTint(region: FacadeRegion, family: FacadeFamily, seed: num
  */
 const ROOF_BY_FAMILY: Record<FacadeFamily, number> = {
   brick: 0x60483c,
+  townhouse: 0x4a4038,
   stone: 0x4f545a,
   render: 0x6f4a38,
   timber: 0x5d3f31,
@@ -1037,7 +1156,7 @@ export function buildFacadeGroup(records: FacadeRecord[], options: { region: Fac
   // them, so a purely commercial street still costs two draw calls.
   const pitchedCount = records.reduce((total, record) => total + (record.roof === 'pitched' ? 1 : 0), 0)
   const steppedCount = records.reduce((total, record) => total + (record.roof === 'stepped' ? 1 : 0), 0)
-  const pitched = pitchedCount ? new THREE.InstancedMesh(sharedRoofGeometry.cone, roofMaterial('pitched'), pitchedCount) : null
+  const pitched = pitchedCount ? new THREE.InstancedMesh(sharedRoofGeometry.gable, roofMaterial('pitched'), pitchedCount) : null
   const stepped = steppedCount ? new THREE.InstancedMesh(sharedRoofGeometry.box, roofMaterial('stepped'), steppedCount) : null
 
   // One dummy and one colour for the entire batch. Allocating either per record
@@ -1081,7 +1200,9 @@ export function buildFacadeGroup(records: FacadeRecord[], options: { region: Fac
     // flat/pitched/stepped roof gets a thin eaves band instead.
     const parapet = (record.roof ?? 'parapet') === 'parapet'
     dummy.position.set(record.x, record.height - (parapet ? -.02 : .025), record.z)
-    dummy.scale.set(record.width + (parapet ? .1 : .18), parapet ? .2 : .11, record.depth + (parapet ? .09 : .16))
+    // Party-wall sides stay at `width`. Extra on that axis is what made two
+    // neighbouring terraces share a cornice and read as one building.
+    dummy.scale.set(record.width, parapet ? .2 : .11, record.depth + (parapet ? .09 : .16))
     dummy.updateMatrix()
     roofs.setMatrixAt(index, dummy.matrix)
     // A parapet is coping, which belongs to the wall and is cut from the same
@@ -1091,14 +1212,20 @@ export function buildFacadeGroup(records: FacadeRecord[], options: { region: Fac
 
     if (pitched && record.roof === 'pitched') {
       const ridge = Math.min(record.width, record.depth) * .58
-      dummy.position.set(record.x, record.height + ridge / 2, record.z)
-      dummy.scale.set(record.width * .78, ridge, record.depth * .78)
-      dummy.rotation.set(0, rotationY + Math.PI / 4, 0)
+      dummy.position.set(record.x, record.height, record.z)
+      // Gable prism: two slopes, ridge along the long axis, eaves flush to the
+      // plan rectangle. Party-wall sides stay at `width` — no neighbour overhang.
+      if (record.depth >= record.width) {
+        dummy.scale.set(record.width, ridge, record.depth)
+        dummy.rotation.set(0, rotationY, 0)
+      } else {
+        dummy.scale.set(record.depth, ridge, record.width)
+        dummy.rotation.set(0, rotationY + Math.PI / 2, 0)
+      }
       dummy.updateMatrix()
       pitched.setMatrixAt(pitchedIndex, dummy.matrix)
       pitched.setColorAt(pitchedIndex, roofTint(region, family, seed + 1.7, colour))
       pitchedIndex += 1
-      dummy.rotation.set(0, rotationY, 0)
     } else if (stepped && record.roof === 'stepped') {
       const cap = .34 + hashUnit(index * 17) * .5
       dummy.position.set(record.x, record.height + cap / 2, record.z)

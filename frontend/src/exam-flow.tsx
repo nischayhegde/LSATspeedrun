@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Check, Clock3, Coffee, Flag, LockKeyho
 
 import { api } from './api'
 import { ErrorNotice } from './components'
+import { useMegaExamDemo } from './demo/use-mega-exam'
 import { useSound } from './sound'
 import type { ExamPaper, ExamSection, ExamState, StudySession } from './types'
 // Travels with this chunk. It restates nothing from `case-session-styles.css`
@@ -478,6 +479,7 @@ function SectionRun({ session, exam }: { session: StudySession; exam: ExamState 
 export function ExamFlow({ session }: { session: StudySession }) {
   const exam = session.exam!
   useRefetchOnReturn(session.id)
+  useMegaExamDemo(session, exam)
   if (exam.stage === 'in_section' && exam.active_section_index != null) {
     return <SectionRun key={exam.active_section_index} session={session} exam={exam} />
   }

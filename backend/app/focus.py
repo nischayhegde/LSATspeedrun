@@ -1,10 +1,12 @@
-"""What the last mega-litigation says practice should work on.
+"""The last mega-litigation's weak types, as a sitting report.
 
-The mega-litigation is the only surface that measures a student without paying
-them, prompting them, or coaching them mid-form, which makes it the only honest
-read on where they are weak. This module turns that read into a short list of
-question types, and both practice selection (`services.select_random_questions`)
-and the strategy experiment (`strategies.assign_strategy_trial`) consult it.
+Practice selection no longer reads this module. `type_focus.rolling_focus`
+is what `services.create_study_session` and `strategies.assign_strategy_trial`
+consult: every first encounter, recency-weighted, compared to the rest of its
+own section. This file still turns one completed mega-litigation into a short
+list of types, because a student who has just sat one wants to know what that
+form said. That list is a report of the sitting, not a statement about what
+the next case run will contain.
 
 It imports models and nothing else. `services` already imports `strategies`, so
 a shared helper living in either of them would close an import cycle.

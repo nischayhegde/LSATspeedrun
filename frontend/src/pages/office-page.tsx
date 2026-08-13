@@ -13,8 +13,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
-import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
+import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { OfficeEventPopup } from '../office-event'
 import { ClientPortrait, ExplorableOffice } from '../game-art'
 import { openEpilogue } from '../narrative'
@@ -39,6 +39,7 @@ export function OfficePage() {
   const [demoBeat, setDemoBeat] = useState(0)
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
+  const performanceQuery = useQuery({ queryKey: ['performance'], queryFn: api.performance })
   const start = useMutation({
     // No size: the server owns how long a run is. Three was a short run back
     // when a run was ten; now a run is six, and a three-question run is one the
@@ -126,6 +127,18 @@ export function OfficePage() {
   const dailyTally = dailyGoal
     ? `${game.daily.cases_completed} / ${dailyGoal.cases}`
     : `${game.daily.cases_completed}`
+  // Same first-encounter split the dashboard `/performance` panel uses.
+  // `total_correct / total_cases` mixes reviews and coached items, so it
+  // cannot stand as learning evidence.
+  const testMetrics = performanceQuery.data?.performance.test_performance
+  const coachedMetrics = performanceQuery.data?.performance.coached_practice
+  const diagnosticAccuracy = testMetrics?.attempts ? `${testMetrics.accuracy}%` : '—'
+  const diagnosticSample = testMetrics?.attempts
+    ? `${testMetrics.attempts} mega-litigation first encounter${testMetrics.attempts === 1 ? '' : 's'}`
+    : 'No mega-litigation first encounters yet'
+  const coachedSample = coachedMetrics?.attempts
+    ? `Coached first encounters ${coachedMetrics.accuracy}% · ${coachedMetrics.attempts}`
+    : 'No coached first encounters yet'
 
   const openCase = () => active ? navigate(`/cases/${active.id}${deckDemo ? '?deckDemo=client' : ''}`) : start.mutate()
   const demoCopy = [
@@ -201,9 +214,17 @@ export function OfficePage() {
             <div><small>OFFICE BRIEF</small><h2 id="office-mobile-brief-title">Today at the firm</h2></div>
             <button type="button" aria-label="Close office brief" onClick={() => setMobileBriefOpen(false)}>×</button>
           </header>
-          <button type="button" className="office-mobile-current-case" onClick={() => { setMobileBriefOpen(false); openCase() }}>
-            <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
-            <span><small>{active ? 'CASE IN PROGRESS' : 'ACTIVE CLIENT'}</small><strong>{workingClient.name}</strong><em>{game.active_client.cases_remaining} files · {formatMoney(workingClient.base_fee)} base</em></span>
+          <button type="button" className={`office-mobile-current-case ${game.active_client.on_hold ? 'is-on-hold' : ''}`} onClick={() => { setMobileBriefOpen(false); openCase() }}>
+            <ClientPortrait kind={game.active_client.icon} name={game.active_client.name} mood="happy" />
+            <span>
+              <small>{active ? 'CASE IN PROGRESS' : game.active_client.on_hold ? 'CONTRACT ON HOLD' : 'ACTIVE CLIENT'}</small>
+              <strong>{game.active_client.name}</strong>
+              <em>
+                {game.active_client.on_hold
+                  ? `${workingClient.name} billing · ${formatMoney(workingClient.base_fee)} base`
+                  : `${game.active_client.cases_remaining} more wins to bonus, then it renews · ${formatMoney(workingClient.base_fee)} base`}
+              </em>
+            </span>
             <b>{active ? 'Resume' : 'Start'} <ArrowRight size={15} /></b>
           </button>
           {/* Cash, firm value and reputation are here as well as the training
@@ -220,7 +241,7 @@ export function OfficePage() {
             <span><small>FIRM VALUE</small><strong>{formatMoney(game.firm_valuation, true)}</strong><em>{game.reputation_band.name} counsel</em></span>
             <span><small>LEASE</small><strong>{game.upkeep.completed ? 'Closed' : formatMoney(game.upkeep.daily_rent, true)}</strong><em>{game.upkeep.completed ? 'charter complete' : 'per day'}</em></span>
             <span><small>TRAINING</small><strong>{dailyTally}</strong><em>questions today</em></span>
-            <span><small>ACCURACY</small><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><em>{game.total_cases} measured</em></span>
+            <span><small>MEGA-LIT</small><strong>{performanceQuery.isLoading ? '…' : diagnosticAccuracy}</strong><em>{testMetrics?.attempts ? `${testMetrics.attempts} first encounters` : 'diagnostic first encounters'}</em></span>
             <span><small>REPUTATION</small><strong>{Math.round(game.reputation).toLocaleString()}</strong><em>standing</em></span>
           </div>
           <div className="office-mobile-next-office">
@@ -312,17 +333,17 @@ export function OfficePage() {
             what is left of the docket, and what a case on it pays. They are
             separate facts about the same arrangement and they are read
             separately, so they are set as two entries rather than one
-            sentence. Same fields, same words, same fallbacks — including the
-            on-hold branch, which only renders once reputation has fallen
-            under the client's requirement and a walk-in starts billing. */}
+            sentence. The portrait and name stay on the retained client even
+            when a walk-in is billing: on hold is a status of that contract,
+            not a change of who the plaque is for. */}
         <article className={`client-quest-card ${game.active_client.on_hold ? 'is-on-hold' : ''}`}>
-          <ClientPortrait kind={workingClient.icon} name={workingClient.name} mood="happy" />
+          <ClientPortrait kind={game.active_client.icon} name={game.active_client.name} mood="happy" />
           <div>
             <span>ACTIVE CONTRACT</span>
-            <h3>{workingClient.name}</h3>
+            <h3>{game.active_client.name}</h3>
             <p>
-              <b>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} files remaining`}</b>
-              <b>{formatMoney(workingClient.base_fee)} base</b>
+              <b>{game.active_client.on_hold ? 'Original contract on hold' : `${game.active_client.cases_remaining} more wins closes this retainer for a bonus, then it renews.`}</b>
+              <b>{game.active_client.on_hold ? `${workingClient.name} billing · ${formatMoney(workingClient.base_fee)} base` : `${formatMoney(workingClient.base_fee)} base`}</b>
             </p>
           </div>
           <button onClick={() => {
@@ -337,7 +358,20 @@ export function OfficePage() {
         </article>
 
         <article className="training-evidence-card">
-          <div><span>LEARNING EVIDENCE</span><strong>{game.total_cases ? Math.round(game.total_correct / game.total_cases * 100) : 0}%</strong><small>{game.total_correct} correct across {game.total_cases} questions</small></div>
+          <div>
+            <span>LEARNING EVIDENCE</span>
+            <strong>{performanceQuery.isLoading ? '…' : diagnosticAccuracy}</strong>
+            <small>
+              {performanceQuery.isLoading
+                ? 'Loading first-encounter evidence…'
+                : performanceQuery.isError
+                  ? 'Evidence could not be loaded.'
+                  : diagnosticSample}
+            </small>
+            {!performanceQuery.isLoading && !performanceQuery.isError && (
+              <small className="evidence-coached-split">{coachedSample}</small>
+            )}
+          </div>
           <button onClick={() => navigate('/progress')}>VIEW PROGRESS</button>
         </article>
       </section>

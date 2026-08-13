@@ -101,7 +101,7 @@
 }
 /* Wraps rather than overflows, and the threshold is the button's own content
    rather than a breakpoint. Next carries the name of the step it goes to —
-   "Next · Connections" — so how much room the row needs changes from step to
+   "Next · Districts" — so how much room the row needs changes from step to
    step, and a width-based rule fixes the steps it was written against and
    misses the rest: at 320px it was exactly two of twenty-eight, the two with
    the longest cue, running 19px past the card's edge. Given a floor wide

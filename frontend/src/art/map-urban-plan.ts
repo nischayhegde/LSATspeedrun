@@ -63,7 +63,12 @@ export type PlannedBuilding = {
   roof: RoofForm
   /** Corner sites are the valuable ones, and read as such. */
   corner: boolean
+  /** Atlas family. City corridor housing is `townhouse`, not generic brick. */
+  family?: 'brick' | 'stone' | 'render' | 'timber' | 'glass' | 'concrete' | 'plank' | 'civic' | 'townhouse'
 }
+
+/** Lots considered vs buildings spawned — the vacancy that was actually built. */
+export type LotCensus = { lots: number; buildings: number }
 
 export type BlockRect = {
   x: number
@@ -243,17 +248,9 @@ export function blocksFromGrid(
 ) {
   const blocks: BlockRect[] = []
   const seedBase = options?.seed ?? 0
-  // `verge: false` keeps the old plot line, at the kerb.
-  //
-  // Only The Circuit's villages ask for it, and only because their authored
-  // props were sited by eye against the old lattice: measured over the same 600
-  // frames, correcting the plot line there moved walkers in solid geometry from
-  // 42.2% to 51.2% of samples, because the farmstead, the halt shelter and the
-  // milestones stayed put while everything around them stepped back and the
-  // crowd's obstacle set — which is what decides where in a pavement a walker
-  // actually stands — changed underneath them. The same correction on the Old
-  // Quarter took 27.9% to 10.8%. The villages need their props re-sited before
-  // they can have it, and that is a separate piece of work.
+  // `verge: false` is the old plot line, at the kerb. Nothing ships it: the
+  // Circuit villages re-sited their farmsteads, halt shelter and milestones
+  // off the paving and now take the paved inset like every other district.
   const inset = options?.verge === false
     ? (streetClass: StreetClass) => STREET_WIDTH[streetClass] / 2
     : streetHalfPaved
@@ -325,7 +322,7 @@ const EDGE_ROTATION = { n: 0, s: Math.PI, w: -Math.PI / 2, e: Math.PI / 2 } as c
  * extra storey, lot frontage varies, and a configurable share of lots stay
  * vacant so that no street face is perfectly continuous.
  */
-export function developBlock(block: BlockRect, spec: BlockSpec): PlannedBuilding[] {
+export function developBlock(block: BlockRect, spec: BlockSpec, census?: LotCensus): PlannedBuilding[] {
   const out: PlannedBuilding[] = []
   const edges = spec.edges ?? ['n', 's', 'e', 'w']
   const built = Math.min(spec.buildingDepth, Math.min(block.width, block.depth) * .46)
@@ -346,6 +343,7 @@ export function developBlock(block: BlockRect, spec: BlockSpec): PlannedBuilding
       cursor += lot
       const seed = spec.seed + edgeIndex * 313 + counter * 29
       counter += 1
+      if (census) census.lots += 1
       if (spec.vacancy && hashUnit(seed * 3 + 7) < spec.vacancy) return
       const corner = run / 2 - Math.abs(centre) < spec.lotMax * .75
       const storeySpan = Math.max(0, spec.storeysMax - spec.storeysMin)
@@ -369,9 +367,15 @@ export function developBlock(block: BlockRect, spec: BlockSpec): PlannedBuilding
         roof: spec.roof,
         corner,
       })
+      if (census) census.buildings += 1
     })
   })
   return out
+}
+
+export function censusVacancyPct(census: LotCensus) {
+  if (!census.lots) return 0
+  return (1 - census.buildings / census.lots) * 100
 }
 
 /** The open interior a perimeter block leaves behind, if any. */
@@ -917,6 +921,7 @@ export function corridorFrontage(corridor: Corridor, crossStreets: CrossStreet[]
    * units meet, and it is the lot *widths* that vary, not the gaps.
    */
   partyGap?: number
+  census?: LotCensus
 }): FrontageLot[] {
   const out: FrontageLot[] = []
   const margin = options.margin ?? .8
@@ -951,6 +956,7 @@ export function corridorFrontage(corridor: Corridor, crossStreets: CrossStreet[]
         counter += 1
         const seed = options.seed + counter * 29 + (side > 0 ? 3557 : 0)
         if (options.allow && !options.allow(centre, side)) continue
+        if (options.census) options.census.lots += 1
         // Within a lot-and-a-half of either end of the run is a corner site.
         const corner = centre - from < options.lotMax * 1.1 || to - centre < options.lotMax * 1.1
         const vacancy = options.vacancy?.(centre, side) ?? 0
@@ -979,6 +985,7 @@ export function corridorFrontage(corridor: Corridor, crossStreets: CrossStreet[]
           roof,
           corner,
         })
+        if (options.census) options.census.buildings += 1
       }
     }
   }

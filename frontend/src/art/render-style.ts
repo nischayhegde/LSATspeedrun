@@ -431,7 +431,7 @@ export class IllustratedRenderPass {
         // Multisampling has to happen before the composite, because resolving
         // afterwards would mean edge-detecting an already-aliased image and the
         // contours would crawl.
-        samples: options.samples ?? 4,
+        samples: options.samples ?? settings.samples ?? 4,
       },
     )
 

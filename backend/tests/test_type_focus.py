@@ -539,3 +539,20 @@ def test_the_cohort_reading_changes_nothing_a_student_is_served(app):
         before = rolling_focus(user.id)
         rolling_population_reading()
         assert rolling_focus(user.id) == before
+
+
+def test_focus_copy_does_not_claim_most_of_each_run_is_drawn_from_the_weak_types():
+    """The dashboard used to say 60% of every case, including holdouts and RC sittings."""
+    from app.services import _focus_explanation
+
+    empty = _focus_explanation([])
+    assert "Nothing stands out yet" in empty
+    assert "Most of each new case" not in empty
+
+    copy = _focus_explanation(["Inference", "Main Point"])
+    assert "Inference" in copy and "Main Point" in copy
+    assert "held out" in copy
+    assert "Reading cases pick a passage" in copy
+    assert "all the matches" in copy
+    assert "Most of each new case" not in copy
+    assert "60% of the questions" not in copy

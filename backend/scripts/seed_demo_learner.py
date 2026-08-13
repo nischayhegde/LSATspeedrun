@@ -32,6 +32,7 @@ from app.models import (
     AiJob,
     Attempt,
     DailyProgress,
+    LayerAssignment,
     LearnerRating,
     PlayerProfile,
     QuestionCalibration,
@@ -193,6 +194,7 @@ def _reset_learner(user: User) -> None:
             QuestionCalibration.origin.notin_(tuple(calibration.TRUSTED_ORIGINS))
         )
     )
+    db.session.execute(delete(LayerAssignment).where(LayerAssignment.subject_id == user.id))
     for session in StudySession.query.filter_by(user_id=user.id).all():
         db.session.delete(session)
     db.session.execute(delete(LedgerEntry).where(LedgerEntry.user_id == user.id))

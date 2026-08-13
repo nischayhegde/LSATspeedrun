@@ -124,9 +124,9 @@ Reading it again is what prompted the marker test: several parts bury an explici
 turn one sentence inside themselves, opening "Moreover, he maintains ..." when the
 turn is the next sentence, "But Weiner's opponents contend ...". Those readings
 are correct about the individual cuts and wrong about the remedy, which is what
-the table above is for. A part that opens "Then??, subjected to massive
-ultraviolet radiation ..." is a third thing again: `Then??` is a corruption in the
-upstream row, the only one of its kind in the bank, and no segmenter can be
+the table above is for. A part that opened "Then??, subjected to massive
+ultraviolet radiation ..." was a third thing again: `Then??` was a corruption in
+the upstream row, patched at source in `lsat-rc/test.jsonl`. No segmenter can be
 blamed for it.
 
 Where a boundary *is* authored it is used and not re-derived: the Passage A/B
@@ -217,8 +217,9 @@ def is_sentence_break(text: str, position: int) -> bool:
 _AUTHORED_BREAK = re.compile(r"\n\s*\n|\r\n\s*\r\n")
 
 # The comparative heading, matched exactly as `strategies.detect_comparative`
-# matches it — including the six sets in this bank that stored the heading with
-# its following space eaten ("Passage BUntil recently") — so the two agree on
+# matches it — including leftover rows that stored the heading with its
+# following space eaten ("Passage B Until recently" in the snapshot; older
+# databases may still have "Passage BUntil recently") — so the two agree on
 # which passages are comparative and where the seam is.
 _PASSAGE_B = re.compile(r"Passage B(?![a-z])")
 

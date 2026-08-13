@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -29,7 +30,9 @@ from .experiments import Exposure
 from .models import (
     AiJob,
     Attempt,
+    LearnerRating,
     Question,
+    QuestionCalibration,
     ReviewQueueItem,
     SessionItem,
     SkillProgress,
@@ -137,6 +140,16 @@ MEGA_LITIGATION_PROMOTION_ACCURACY = 0.70
 # Share of a practice run's fresh questions drawn from measured weaknesses. The
 # rest stay random so practice keeps covering the whole test.
 FOCUS_FILL_RATIO = 0.6
+
+# How tightly a difficulty-targeted slot aims at the student's ability, in
+# logits. One sigma is a little under a published band; items a couple of
+# bands away still get some weight, which is the exploration the Gaussian
+# itself provides on top of `calibration.exposure_draw`'s 25% random holdout.
+DIFFICULTY_TARGET_SIGMA = 0.8
+# Weight given to an item with no published rating and no calibration row, as
+# if it sat one sigma from the target. Unrated items stay in the mix instead
+# of vanishing the moment targeting turns on.
+UNKNOWN_DIFFICULTY_WEIGHT = math.exp(-0.5)
 
 # The two sections this bank ships, spelled once. Both are compared against
 # `Question.section` all over this module as bare strings; these are here because
@@ -810,17 +823,19 @@ def _seen_question_ids(user_id: str) -> set[str]:
 
 
 class QuestionFact(NamedTuple):
-    """The four columns choosing a run actually reads.
+    """The columns choosing a run actually reads.
 
     Building a session used to load every eligible question as a full ORM
     instance — 7,101 of them on this bank — with each one's stimulus, stem and
     explanation attached, only to pick eight and discard the rest. The selection
     never looks at any of that text: it groups by `passage_id`, biases by
-    `question_type`, times by `section`, and identifies by `id`.
+    `question_type`, times by `section`, identifies by `id`, and — when
+    difficulty targeting is on — aims by `published_difficulty` or the Elo
+    rating on `question_calibrations`.
 
-    Four scalar columns instead of twelve, and a tuple instead of an instrumented
-    ORM object, is the whole difference between a 720 ms selection and a 25 ms
-    one. The questions that survive selection are loaded whole in
+    Extra scalar columns instead of twelve, and a tuple instead of an
+    instrumented ORM object, is the whole difference between a 720 ms selection
+    and a 25 ms one. The questions that survive selection are loaded whole in
     `_load_questions_in_order`, because deciding which techniques a question can
     be paired with does read the stimulus.
     """
@@ -829,6 +844,9 @@ class QuestionFact(NamedTuple):
     question_type: str | None
     passage_id: str | None
     section: str | None
+    published_difficulty: int | None = None
+    calibration_rating: float | None = None
+    calibration_responses: int | None = None
 
 
 def _eligible_question_facts(
@@ -839,6 +857,11 @@ def _eligible_question_facts(
         Question.question_type,
         Question.passage_id,
         Question.section,
+        Question.published_difficulty,
+        QuestionCalibration.rating,
+        QuestionCalibration.responses,
+    ).outerjoin(
+        QuestionCalibration, QuestionCalibration.question_id == Question.id
     ).filter(Question.source.like(f"{SOURCE_PREFIX}%"))
     if question_type:
         query = query.filter(Question.question_type == question_type)
@@ -881,6 +904,8 @@ def select_random_questions(
     exclude_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
     section: str | None = None,
+    session_id: str | None = None,
+    target_difficulty: bool = False,
 ) -> list[Question]:
     # Excluding here rather than from `unseen` alone matters: the fallback below
     # widens the pool to already-seen questions, and a question seeded as a
@@ -901,7 +926,94 @@ def select_random_questions(
     # same complement, but the second is a list scan inside a list comprehension,
     # so widening the pool on the full bank was fifty million comparisons.
     pool = unseen if len(unseen) >= count else unseen + [fact for fact in eligible if fact.id in seen_ids]
-    return _load_questions_in_order(_weight_toward_focus(pool, count, focus_types))
+    return _load_questions_in_order(
+        _weight_toward_focus(
+            pool,
+            count,
+            focus_types,
+            user_id=user_id,
+            session_id=session_id,
+            target_difficulty=target_difficulty,
+        )
+    )
+
+
+def _item_logit(fact: QuestionFact, centre: float) -> float | None:
+    """Raw-scale difficulty for targeting, or None when nothing is known.
+
+    A published 1–5 beats an Elo estimate: that column means the test maker
+    stated one. Empty `published_difficulty` is the expected state of this
+    bank and is not an error — the Elo rating is used instead, including
+    provisional and simulated rows, because a selector that waited for
+    `usable_for_targeting` would be a no-op on a lived-in demo whose ratings
+    are still accumulating. An item with neither source has no difficulty.
+    """
+    published = calibration.published_logit(fact.published_difficulty)
+    if published is not None:
+        return published + centre
+    if fact.calibration_rating is not None and (fact.calibration_responses or 0) > 0:
+        return fact.calibration_rating
+    return None
+
+
+def _load_learner_thetas(user_id: str | None) -> dict[str, float]:
+    if not user_id:
+        return {}
+    return {
+        row.scope: row.rating
+        for row in LearnerRating.query.filter_by(user_id=user_id)
+    }
+
+
+def _pick_near_ability(
+    facts: list[QuestionFact],
+    *,
+    thetas: dict[str, float],
+    centre: float,
+) -> QuestionFact:
+    """One fact, weighted toward the student's ability in that fact's section."""
+    if len(facts) == 1:
+        return facts[0]
+    weights = []
+    for fact in facts:
+        difficulty = _item_logit(fact, centre)
+        if difficulty is None:
+            weights.append(UNKNOWN_DIFFICULTY_WEIGHT)
+            continue
+        theta = thetas.get(fact.section or LOGICAL_REASONING, 0.0)
+        z = (difficulty - theta) / DIFFICULTY_TARGET_SIGMA
+        weights.append(math.exp(-0.5 * z * z))
+    return random.choices(facts, weights=weights, k=1)[0]
+
+
+def _pick_block_near_ability(
+    blocks: list[list[QuestionFact]],
+    *,
+    thetas: dict[str, float],
+    centre: float,
+) -> list[QuestionFact]:
+    if len(blocks) == 1:
+        return blocks[0]
+    weights = []
+    for block in blocks:
+        logits = [_item_logit(question, centre) for question in block]
+        known = [value for value in logits if value is not None]
+        if not known:
+            weights.append(UNKNOWN_DIFFICULTY_WEIGHT)
+            continue
+        difficulty = sum(known) / len(known)
+        theta = thetas.get((block[0].section or LOGICAL_REASONING), 0.0)
+        z = (difficulty - theta) / DIFFICULTY_TARGET_SIGMA
+        weights.append(math.exp(-0.5 * z * z))
+    return random.choices(blocks, weights=weights, k=1)[0]
+
+
+def _slot_policy(user_id: str | None, session_id: str | None, position: int, *, target_difficulty: bool) -> str:
+    if not target_difficulty:
+        return calibration.EXPOSURE_BLIND
+    if user_id and session_id:
+        return calibration.exposure_draw(user_id, session_id, position)["policy"]
+    return calibration.EXPOSURE_TARGETED
 
 
 def _passage_blocks(pool: list[QuestionFact]) -> list[list[QuestionFact]]:
@@ -1015,17 +1127,13 @@ class SequencingProfile(NamedTuple):
     them so a caller — or a probe — can say *why* a run came out the shape it
     did without recomputing anything.
 
-    **Where question difficulty would go.** There is now a per-item rating,
-    earned per response in `app/calibration.py`, but nothing in the adaptive
-    path reads it and this profile does not either. When it is consumed, this
-    is where it belongs: a `target_difficulty` beside these, derived from the
-    same accuracy evidence, read by `select_random_questions` and by the
-    passage choice in `select_reading_comprehension_case` to bias *which*
-    questions a run draws rather than how many of each kind. Wiring it means
-    randomising exposure at the same time — see `docs/question-difficulty.md`
-    — which is why it is still left open. It is also why the two selection
-    functions take their inputs as arguments instead of reaching for the
-    profile themselves: adding a field here should not mean rewriting them.
+    **Where question difficulty lives.** `select_random_questions` and the
+    in-passage fill of `select_reading_comprehension_case` read Elo ratings
+    (and `published_difficulty` when a real one exists) when the
+    `difficulty_targeting` arm is on. That is a per-slot decision randomised
+    by `calibration.exposure_draw`, not a run-level share, so it does not
+    belong on this profile. The two selection functions still take their
+    inputs as arguments instead of reaching for the profile themselves.
     """
 
     review_share: float
@@ -1158,8 +1266,10 @@ def _reading_case_share(lr_accuracy: float, rc_accuracy: float) -> float:
 def sequencing_profile(user_id: str, session_size: int) -> SequencingProfile:
     """Read the student's record and say what shape their next run should be.
 
-    One call site, `create_study_session`, and one place to look when a run
-    comes out unexpected. Two queries: the review queue, and one aggregate over
+    Always personalises from the student's own queue and section rates. The
+    call site, `create_study_session`, may discard these shares on the
+    `run_sequencing` off arm and use the fixed `REVIEW_SHARE` / `RC_CASE_SHARE`
+    defaults instead. Two queries: the review queue, and one aggregate over
     answers grouped by section.
     """
     pressure = scheduling.queue_pressure(user_id)
@@ -1196,13 +1306,29 @@ def _reading_case_from_passage(
     ceiling: int,
     *,
     prefer_first: set[str],
+    wanted: set[tuple[str, str]] | None = None,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    position_offset: int = 0,
+    target_difficulty: bool = False,
+    thetas: dict[str, float] | None = None,
+    centre: float = 0.0,
 ) -> list[QuestionFact]:
     """One passage's questions, in the order this case should serve them.
 
     `prefer_first` is whatever this case is being built around — the unseen
     questions on a fresh-led case, the due review cards on a review-led one.
-    Everything else follows in the passage's own order, and the case is cut at
-    `ceiling`.
+
+    When `wanted` names weak RC types, matching questions are taken first —
+    all of them that fit — and the rest of the sitting is filled from the
+    passage's other questions. That is how a weak RC type becomes most of the
+    sitting when the chosen passage actually contains it, rather than a 60%
+    quota pretended across mixed types. Unseen (or due) questions still sort
+    first *inside* each of those two groups.
+
+    `target_difficulty` then aims each slot at the student's ability among
+    the remaining candidates of the current group, with `exposure_draw`
+    holding a quarter of slots uniform.
 
     This is what happens when a sixteen-question passage meets a six-question
     sitting, and it is why nothing needs to be stored to make it work. The
@@ -1214,9 +1340,48 @@ def _reading_case_from_passage(
     Four passages in this bank need a second visit (one of 9, one of 10, two of
     16); the other 345 are finished in one.
     """
-    preferred = [question for question in block if question.id in prefer_first]
-    rest = [question for question in block if question.id not in prefer_first]
-    return (preferred + rest)[:ceiling]
+
+    def unseen_first(questions: list[QuestionFact]) -> list[QuestionFact]:
+        preferred = [question for question in questions if question.id in prefer_first]
+        rest = [question for question in questions if question.id not in prefer_first]
+        return preferred + rest
+
+    matching = [
+        question
+        for question in block
+        if wanted and (question.section, question.question_type) in wanted
+    ]
+    if wanted:
+        matching_ids = {question.id for question in matching}
+        ordered = unseen_first(matching) + unseen_first(
+            [question for question in block if question.id not in matching_ids]
+        )
+    else:
+        matching_ids = set()
+        ordered = unseen_first(block)
+    if not target_difficulty or ceiling <= 0:
+        return ordered[:ceiling]
+
+    remaining = list(ordered)
+    chosen: list[QuestionFact] = []
+    ability = thetas if thetas is not None else _load_learner_thetas(user_id)
+    for index in range(min(ceiling, len(remaining))):
+        matching_left = (
+            [question for question in remaining if question.id in matching_ids]
+            if matching_ids
+            else []
+        )
+        source = matching_left or remaining
+        type_pool = [question for question in source if question.id in prefer_first] or source
+        policy = _slot_policy(user_id, session_id, position_offset + index, target_difficulty=True)
+        pick = (
+            _pick_near_ability(type_pool, thetas=ability, centre=centre)
+            if policy == calibration.EXPOSURE_TARGETED
+            else type_pool[0]
+        )
+        chosen.append(pick)
+        remaining = [question for question in remaining if question.id != pick.id]
+    return chosen
 
 
 def select_reading_comprehension_case(
@@ -1226,6 +1391,9 @@ def select_reading_comprehension_case(
     exclude_ids: set[str] | None = None,
     due_ids: list[str] | None = None,
     review_share: float | None = None,
+    focus_types: list | None = None,
+    session_id: str | None = None,
+    target_difficulty: bool = False,
 ) -> list[Question]:
     """One passage, whole, as a case in its own right.
 
@@ -1255,6 +1423,16 @@ def select_reading_comprehension_case(
     it is what stops the section collapsing in either direction — all-fresh
     would never return an RC card, all-review would never put a new one in.
 
+    `focus_types` bias which passage is chosen, then — once that passage is
+    chosen — prefer questions whose RC type is on the list when filling the
+    sitting. A passage that carries five of a weak type in a six-question
+    sitting serves those five plus one fill; a passage with too few matching
+    questions contributes every match it has and fills from the rest. There is
+    no fake global 60% quota inside a mixed passage. Review-led choice still
+    follows the weakest due card: memory wins over type targeting when a card
+    is due. Difficulty targeting, when on, aims the remaining choice at the
+    student's ability without dropping `RC_CASE_MIN_SITTING`.
+
     Returns [] when there is no Reading Comprehension material to build on, and
     the caller falls back to an ordinary run. A bank with no passages in it is a
     real configuration: most of the test suite runs on one.
@@ -1283,6 +1461,11 @@ def select_reading_comprehension_case(
         return []
 
     seen_ids = _seen_question_ids(user_id) if user_id else set()
+    wanted = {
+        (focus.section, focus.question_type)
+        for focus in focus_types or ()
+        if getattr(focus, "section", None) == READING_COMPREHENSION
+    }
 
     # Review-led: the passage under the weakest due card. `due_ids` arrives
     # already ranked by retrievability, so the first one whose passage is still
@@ -1331,10 +1514,22 @@ def select_reading_comprehension_case(
             if not unseen_here:
                 continue
             (untouched if len(unseen_here) == len(block) else started).append(passage_id)
-        # Shuffled rather than ranked within a tier, because there is no signal
-        # here worth ranking on and a stable order would serve the same passages
-        # to everybody.
+        # Finish a started passage first, then an untouched one, then any. Within
+        # a tier, prefer a passage that carries a weak RC type when targeting is
+        # on. In-passage fill then prefers those types; falling back to the rest
+        # of the tier keeps passage choice a bias rather than a filter.
         remaining = started or untouched or [key for key in passages if key not in used]
+        if wanted:
+            preferred = [
+                passage_id
+                for passage_id in remaining
+                if any(
+                    (question.section, question.question_type) in wanted
+                    for question in passages[passage_id]
+                )
+            ]
+            if preferred:
+                remaining = preferred
         return random.choice(remaining) if remaining else None
 
     # Usually one passage, and at the shipped six-question sitting one for every
@@ -1356,6 +1551,8 @@ def select_reading_comprehension_case(
     # much of the exam a student sees — approached from above.
     chosen: list[QuestionFact] = []
     used: set[str] = set()
+    thetas = _load_learner_thetas(user_id) if target_difficulty else {}
+    centre = calibration.scale_centre() if target_difficulty else 0.0
     while True:
         passage_id = review_led if not used and review_led else next_passage(used)
         if passage_id is None:
@@ -1367,7 +1564,16 @@ def select_reading_comprehension_case(
             else {question.id for question in passages[passage_id] if question.id not in seen_ids}
         )
         chosen += _reading_case_from_passage(
-            passages[passage_id], ceiling - len(chosen), prefer_first=prefer
+            passages[passage_id],
+            ceiling - len(chosen),
+            prefer_first=prefer,
+            wanted=wanted,
+            user_id=user_id,
+            session_id=session_id,
+            position_offset=len(chosen),
+            target_difficulty=target_difficulty,
+            thetas=thetas,
+            centre=centre,
         )
         # Stop once the run is as long as it asked to be, and otherwise take
         # another passage only if what is left could hold a case in its own
@@ -1426,7 +1632,13 @@ def _fill_blocks(
 
 
 def _weight_toward_focus(
-    pool: list[QuestionFact], count: int, focus_types: list[str] | None
+    pool: list[QuestionFact],
+    count: int,
+    focus_types: list[str] | None,
+    *,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    target_difficulty: bool = False,
 ) -> list[QuestionFact]:
     """Fill most of a run from the student's weak types, the rest at random.
 
@@ -1480,6 +1692,15 @@ def _weight_toward_focus(
     random.shuffle(blocks)
     wanted = {(focus.section, focus.question_type) for focus in focus_types or ()}
     ceiling = count + passage_overshoot_allowance(count)
+    if target_difficulty:
+        return _weight_toward_focus_and_difficulty(
+            blocks,
+            count,
+            wanted,
+            ceiling=ceiling,
+            user_id=user_id,
+            session_id=session_id,
+        )
     selected: list[list[QuestionFact]] = []
     if wanted:
         preferred = [
@@ -1501,6 +1722,77 @@ def _weight_toward_focus(
         # refusing to build a session at all.
         selected.append(min(blocks, key=len))
     random.shuffle(selected)
+    return [question for block in selected for question in block]
+
+
+def _weight_toward_focus_and_difficulty(
+    blocks: list[list[QuestionFact]],
+    count: int,
+    wanted: set[tuple[str, str]],
+    *,
+    ceiling: int,
+    user_id: str | None,
+    session_id: str | None,
+) -> list[QuestionFact]:
+    """Focus quota first, then aim each slot at the student's ability.
+
+    Same block integrity and focus split as `_weight_toward_focus`. The
+    difference is that each new block is chosen with `exposure_draw`: a
+    targeted slot weights remaining candidates toward the learner's θ, a
+    random slot draws uniformly among them. Empty `published_difficulty` and
+    missing calibration rows are both legal; those items get the unknown
+    weight rather than crashing or vanishing.
+    """
+    preferred = [
+        block
+        for block in blocks
+        if wanted
+        and any((question.section, question.question_type) in wanted for question in block)
+    ]
+    preferred_ids = {id(block) for block in preferred}
+    others = [block for block in blocks if id(block) not in preferred_ids]
+    remaining_preferred = list(preferred)
+    remaining_others = list(others)
+    selected: list[list[QuestionFact]] = []
+    focus_budget = round(count * FOCUS_FILL_RATIO) if wanted else 0
+    thetas = _load_learner_thetas(user_id)
+    centre = calibration.scale_centre()
+
+    def fits(block: list[QuestionFact], used: int) -> bool:
+        return used + len(block) <= ceiling
+
+    def take(candidates: list[list[QuestionFact]], position: int) -> list[QuestionFact] | None:
+        usable = [block for block in candidates if fits(block, position)]
+        if not usable:
+            return None
+        policy = _slot_policy(user_id, session_id, position, target_difficulty=True)
+        if policy == calibration.EXPOSURE_TARGETED:
+            return _pick_block_near_ability(usable, thetas=thetas, centre=centre)
+        return random.choice(usable)
+
+    while True:
+        used = sum(len(block) for block in selected)
+        if used >= count:
+            break
+        focus_so_far = sum(
+            1
+            for block in selected
+            for question in block
+            if (question.section, question.question_type) in wanted
+        )
+        need_focus = wanted and focus_so_far < focus_budget
+        pick = None
+        if need_focus:
+            pick = take(remaining_preferred, used)
+        if pick is None:
+            pick = take(remaining_others, used) or take(remaining_preferred, used)
+        if pick is None:
+            break
+        selected.append(pick)
+        remaining_preferred = [block for block in remaining_preferred if id(block) != id(pick)]
+        remaining_others = [block for block in remaining_others if id(block) != id(pick)]
+    if not selected and blocks:
+        selected.append(min(blocks, key=len))
     return [question for block in selected for question in block]
 
 
@@ -1654,12 +1946,13 @@ def create_study_session(
     # writes assignment rows naming an id that was never inserted and
     # `layer_reading` quietly reports nothing.
     #
-    # A reading case returns before the draw below, so this id goes unused on
-    # that path and the case builds its own run. That is correct rather than a
-    # gap: reading cases do not read `focus_types`, so the layer cannot act on
-    # them and enrolling them would dilute the comparison.
+    # The run's id is used on both shapes now: reading cases draw targeting
+    # (they can prefer a passage that carries a weak RC type) and both shapes
+    # draw `run_sequencing`.
     session_id = new_id()
-
+    target_difficulty = False
+    review_share = REVIEW_SHARE
+    reading_share = RC_CASE_SHARE
     # Which shape of case this is. A reading case is one passage and is built
     # entirely differently — see `select_reading_comprehension_case` for why the
     # section needs a case of its own rather than a bigger share of a mixed one.
@@ -1680,23 +1973,46 @@ def create_study_session(
     #
     # What this student's own record says the run should look like: how much of
     # it is review, and how often a case is a reading case. Read once, here, and
-    # nowhere else. See `SequencingProfile`.
+    # nowhere else. See `SequencingProfile`. The `run_sequencing` off arm throws
+    # those shares away and uses the fixed defaults, which is the comparison
+    # the layer exists to make. A type-filtered drill skips the read and the
+    # draw — the student has overridden the shape by hand.
     #
-    # A type-filtered drill skips the read entirely — the student has overridden
-    # the shape by hand, so nothing personal applies and the queries are wasted.
-    sequencing = None if question_type else sequencing_profile(user.id, session_size)
+    # `difficulty_targeting` and `run_sequencing` enroll together through
+    # `enroll_unfiltered_run`, which is also what the demo history writer has
+    # to call: that path used to skip `assign` and left the lived-in account
+    # with zero assignment rows while both layers were live.
+    if not question_type:
+        enrolled = experiments.enroll_unfiltered_run(user.id, session_id)
+        target_difficulty = enrolled["difficulty_targeting"].on
+        sequencing = sequencing_profile(user.id, session_size)
+        if enrolled["run_sequencing"].on:
+            review_share = sequencing.review_share
+            reading_share = sequencing.reading_case_share
 
     # The share is read from config so a test can pin the shape it means to
-    # exercise. Nothing sets it; the default is the student's own.
-    rc_share = float(
-        current_app.config.get(
-            "PRACTICE_RC_CASE_SHARE",
-            sequencing.reading_case_share if sequencing else RC_CASE_SHARE,
-        )
-    )
+    # exercise. Nothing sets it; the default is the arm's.
+    rc_share = float(current_app.config.get("PRACTICE_RC_CASE_SHARE", reading_share))
     reading_case = (
         not question_type and session_size >= RC_CASE_MIN_SITTING and random.random() < rc_share
     )
+    # A type-filtered run is the student overriding the weighting by hand, so
+    # the weak-type signal only steers an unfiltered one.
+    #
+    # `rolling_focus`, not `diagnostic_focus`. The old signal read exactly one
+    # run — the last completed mega-litigation — so a student who was
+    # consistently poor at necessary-assumption questions across two hundred
+    # ordinary cases was not noticed as weak at that category by anything, and a
+    # student who had improved since March was still being fed what March said.
+    # The new one reads every first encounter the account has filed, decayed by
+    # recency, weighted by evidence class so the mega-litigation still counts
+    # nearly twice what a coached case does, and shrunk toward the student's own
+    # accuracy in that section. `app/type_focus.py` has the reasoning, including
+    # what it deliberately does not double-count.
+    #
+    # It subsumes the old signal rather than sitting beside it: same layer, same
+    # arms, new `design_version`.
+    focus_types = [] if question_type else rolling_focus(user.id)
     if reading_case:
         # Ranked review cards for this section, handed to the case builder so it
         # can decide between a re-read and a new passage. Asked for generously
@@ -1706,6 +2022,18 @@ def create_study_session(
         due = _questions_due_for_review(
             user.id, reading_case_ceiling(session_size), section=READING_COMPREHENSION
         )
+        rc_focus = _focus_in_section(focus_types, READING_COMPREHENSION)
+        # Draw without writing so a failed build (no RC in this bank) can fall
+        # through to an argument case without leaving a targeting row that
+        # names types this run never served. `assign` below hashes the same
+        # exposure and records the same arm.
+        selection_focus = []
+        if rc_focus:
+            targeting = experiments.draw(
+                "weak_type_targeting", user.id, exposure=Exposure.run(session_id)
+            )
+            if targeting.on:
+                selection_focus = rc_focus
         questions = select_reading_comprehension_case(
             session_size,
             user_id=user.id,
@@ -1715,9 +2043,19 @@ def create_study_session(
             # so "half this run is review" has to become "half of these runs are
             # re-reads". A student behind on their queue therefore gets both
             # more repairs per argument case and more re-read passages.
-            review_share=sequencing.review_share,
+            review_share=review_share,
+            focus_types=selection_focus,
+            session_id=session_id,
+            target_difficulty=target_difficulty,
         )
         if questions:
+            if rc_focus:
+                experiments.assign(
+                    "weak_type_targeting",
+                    user.id,
+                    exposure=Exposure.run(session_id),
+                    signal=experiments.signal_tokens(rc_focus),
+                )
             return _build_practice_session(
                 user,
                 profile,
@@ -1733,6 +2071,8 @@ def create_study_session(
                 # The whole of Reading Comprehension was invisible to the review
                 # machinery it had just been given access to.
                 repair_ids={question.id for question in due},
+                focus_types=focus_types,
+                target_difficulty=target_difficulty,
             )
         # No Reading Comprehension in this bank. Most of the test suite runs on
         # one of those, and so would a deployment that shipped LR only.
@@ -1759,7 +2099,7 @@ def create_study_session(
     # is 0 and round(2.5) is 2, so a budget could land a question below what the
     # share asked for depending on whether the product happened to be even.
     repair_budget = (
-        0 if question_type else max(1, int(session_size * sequencing.review_share + 0.5))
+        0 if question_type else max(1, int(session_size * review_share + 0.5))
     )
     repairs = (
         []
@@ -1769,23 +2109,6 @@ def create_study_session(
     # Due passage-mates travel together so the run reads the passage once. Only
     # the ones the scheduler already chose — see `cluster_passage_mates`.
     repairs = scheduling.cluster_passage_mates(repairs)
-    # A type-filtered run is the student overriding the weighting by hand, so
-    # the weak-type signal only steers an unfiltered one.
-    #
-    # `rolling_focus`, not `diagnostic_focus`. The old signal read exactly one
-    # run — the last completed mega-litigation — so a student who was
-    # consistently poor at necessary-assumption questions across two hundred
-    # ordinary cases was not noticed as weak at that category by anything, and a
-    # student who had improved since March was still being fed what March said.
-    # The new one reads every first encounter the account has filed, decayed by
-    # recency, weighted by evidence class so the mega-litigation still counts
-    # nearly twice what a coached case does, and shrunk toward the student's own
-    # accuracy in that section. `app/type_focus.py` has the reasoning, including
-    # what it deliberately does not double-count.
-    #
-    # It subsumes the old signal rather than sitting beside it: same layer, same
-    # arms, new `design_version`.
-    focus_types = [] if question_type else rolling_focus(user.id)
     # Weak-type targeting is an adaptive layer like any other, and until now it
     # was one nobody could evaluate: it has steered every eligible run since it
     # shipped, so there has never been a run to compare a steered one against.
@@ -1793,12 +2116,14 @@ def create_study_session(
     # `app/experiments.py` for why the run's id is the exposure and why the
     # propensity is written down.
     #
-    # The draw happens only where the layer could act — a run with no focus
-    # types is the same run either way, and enrolling it would dilute the
-    # comparison with runs on which the treatment is a no-op. Eligibility is
+    # The draw happens only where the layer could act on this case shape — an
+    # argument case can lean into LR types, a reading case into RC types. A
+    # run whose weak types are all in the other section is the same run either
+    # way, and enrolling it would dilute the comparison. Eligibility is
     # decided from answers filed before this run started, so it cannot be an
     # outcome of the arm.
-    if focus_types:
+    lr_focus = _focus_in_section(focus_types, LOGICAL_REASONING)
+    if lr_focus:
         # The weak types go on the assignment row. They have to: the layer is
         # read on later encounters with the types this run leaned into, and by
         # the time anyone reads it the signal has moved — a student who
@@ -1808,16 +2133,16 @@ def create_study_session(
             "weak_type_targeting",
             user.id,
             exposure=Exposure.run(session_id),
-            signal=experiments.signal_tokens(focus_types),
+            signal=experiments.signal_tokens(lr_focus),
         )
         # The strategy trial still sees the unblanked list. Its `focus_types`
         # only lengthens the coverage runway on weak types, which is a decision
         # about a different layer; letting this arm move it too would bundle
         # two treatments into one label and make the reading below the effect
         # of neither.
-        selection_focus_types = focus_types if targeting.on else []
+        selection_focus_types = lr_focus if targeting.on else []
     else:
-        selection_focus_types = focus_types
+        selection_focus_types = []
     repair_ids = {question.id for question in repairs}
     # A fresh question sharing a passage with a review item would have the run
     # read that passage twice, because reviews and fresh material are placed
@@ -1852,6 +2177,8 @@ def create_study_session(
         exclude_ids=blocked_ids,
         focus_types=selection_focus_types,
         section=None if question_type else LOGICAL_REASONING,
+        session_id=session_id,
+        target_difficulty=target_difficulty,
     )
     # Genuine interleaving, not front-loading. Reviews are distributed through
     # the run instead of stacked at the start, which is what the old
@@ -1891,6 +2218,7 @@ def create_study_session(
         question_type=question_type,
         repair_ids=repair_ids,
         focus_types=focus_types,
+        target_difficulty=target_difficulty,
     )
 
 
@@ -1903,6 +2231,7 @@ def _build_practice_session(
     question_type: str | None,
     repair_ids: set[str] | None = None,
     focus_types: list[str] | None = None,
+    target_difficulty: bool = False,
 ) -> StudySession:
     """Write a chosen list of questions out as a run.
 
@@ -2026,6 +2355,11 @@ def _build_practice_session(
                 # different interfaces. See app/enforcement.py.
                 strategy_enforcement_level=assign_enforcement_level(user.id, strategy_trial, "practice"),
                 target_time_seconds=target_time_seconds,
+                # Stable with the draw selection already made: same user, run
+                # and slot hash to the same policy. Off-arm runs stay `blind`.
+                exposure_policy=_slot_policy(
+                    user.id, session.id, position, target_difficulty=target_difficulty
+                ),
             )
         )
         previous_passage_id = question.passage_id
@@ -3126,6 +3460,38 @@ def _join_types(names: list[str]) -> str:
     return ", ".join(names[:-1]) + f" and {names[-1]}"
 
 
+def _focus_in_section(focus_types, section: str) -> list:
+    """The weak types this case shape can actually lean into."""
+    return [focus for focus in focus_types or () if getattr(focus, "section", None) == section]
+
+
+def _focus_explanation(types: list[str]) -> str:
+    """What targeting actually does, including the holdout and the RC fill.
+
+    Argument cases fill about FOCUS_FILL_RATIO of fresh questions from the weak
+    types, and only when the targeting arm is on. Reading cases pick a passage
+    that carries a weak RC type, then prefer those types when filling the
+    sitting — all matches, then the rest of the passage. About one in four
+    eligible runs is held out. Published item difficulty is unused on this
+    bank; mix adapts toward ability through Elo ratings when that layer is on.
+    """
+    if not types:
+        return (
+            "Nothing stands out yet as a question type you are weaker at than the rest of its "
+            "section. Keep practising and this will start weighting itself."
+        )
+    fill = round(FOCUS_FILL_RATIO * 100)
+    return (
+        "Across your recent first attempts you are coming in under your own average for the "
+        f"section on {_join_types(types)}. Argument cases draw about {fill}% of their fresh "
+        "questions from those types when targeting is on; about one in four eligible runs is "
+        "held out untargeted. Reading cases pick a passage that carries a weak type, then "
+        "prefer those questions when filling the sitting — all the matches the passage has, "
+        "then the rest. Strategy trials on those types keep testing approaches for longer "
+        "before settling. Recent work counts most, so this moves as you improve."
+    )
+
+
 def _skill_breakdown(attempts: list[Attempt]) -> list[dict]:
     grouped: dict[str, list[Attempt]] = defaultdict(list)
     for attempt in attempts:
@@ -3411,15 +3777,7 @@ def performance_snapshot(user: User) -> dict:
             else None,
             "baseline_accuracy": sitting_detail["baseline_accuracy"],
         },
-        "explanation": (
-            "Across your recent first attempts you are coming in under your own average for the "
-            "section on " + _join_types(rolling_detail["types"]) + ". Most of each new case run is "
-            "drawn from those, and their strategy trials keep testing approaches for longer before "
-            "settling. Recent work counts most, so this moves as you improve."
-            if rolling_detail["types"]
-            else "Nothing stands out yet as a question type you are weaker at than the rest of its "
-            "section. Keep practising and this will start weighting itself."
-        ),
+        "explanation": _focus_explanation(rolling_detail["types"]),
     }
 
     # The attempt list is handed over rather than re-read: this function has

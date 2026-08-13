@@ -23,7 +23,8 @@
     min-height: 100vh;
     min-height: 100dvh;
     grid-template: 54px minmax(0, 1fr) auto / minmax(0, 1fr);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   .login-nav {
     min-height: 0;
@@ -105,7 +106,8 @@
     min-height: 0;
     display: block;
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     background: #0b1520;
   }
   .login-nav {
@@ -116,9 +118,7 @@
     z-index: 20;
     inset: 0 0 auto;
     border-bottom: 1px solid rgba(221, 190, 113, .3);
-    background: linear-gradient(180deg, rgba(10, 19, 30, .98), rgba(12, 24, 36, .9));
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
+    background: #111a29;
   }
   .login-nav > span { display: none; }
   .login-hero {
@@ -163,12 +163,10 @@
     border: 1px solid rgba(225, 199, 134, .34);
     border-radius: 16px;
     color: #f6ead0;
-    background: linear-gradient(130deg, rgba(10, 27, 39, .9), rgba(12, 27, 38, .65));
+    background: #142533;
     box-shadow: 0 18px 42px rgba(3, 8, 13, .25), inset 0 1px rgba(255,255,255,.08);
-    -webkit-backdrop-filter: blur(13px);
-    backdrop-filter: blur(13px);
   }
-  .login-copy .eyebrow { font-size: 9.5px; }
+  .login-copy .eyebrow { font-size: 11px; }
   .login-copy h1 {
     margin: 7px 0 8px;
     font-size: clamp(28px, 8.3vw, 35px);
@@ -186,33 +184,19 @@
     margin-top: 11px;
     padding-bottom: 2px;
     display: flex;
-    flex-flow: row nowrap;
+    flex-direction: column;
+    flex-wrap: nowrap;
     gap: 7px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-    font-size: 10px;
-    /* The second card is meant to peek, which is how a snap rail says there is
-       more of it. Without a soft edge it does not read as a peek: at 390 the
-       cut lands mid-word on "Reasoning" and the first screen anyone ever sees
-       opens with what looks like broken text. The mask turns the same 104px of
-       card into an edge that is obviously continuing.
-
-       A mask and not an overlay, because this rail sits on a translucent panel
-       over the office scene and a gradient strip painted on top of it would
-       have to match a background that moves. Cheap here for the same reason a
-       full-viewport one would not be: 366x38, four children, no blur. */
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
-    mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    overflow: visible;
+    font-size: 11px;
   }
-  .feature-list::-webkit-scrollbar { display: none; }
   .feature-list span {
-    min-width: min(71vw, 255px);
+    min-width: 0;
+    width: 100%;
     min-height: 38px;
     padding: 7px 9px;
-    flex: 0 0 auto;
+    flex: none;
     align-items: center;
-    scroll-snap-align: start;
     border: 1px solid rgba(229, 202, 139, .2);
     border-radius: 9px;
     background: rgba(255,255,255,.055);
@@ -246,7 +230,7 @@
     border-radius: 11px;
     box-shadow: 0 6px 18px rgba(5, 10, 16, .28), inset 0 0 0 1px #dbad4e;
   }
-  .login-panel .eyebrow { font-size: 9px; }
+  .login-panel .eyebrow { font-size: 11px; }
   .login-panel h2 { margin: 4px 0; font-size: 22px; }
   .login-panel > p { margin: 0 0 9px; font-size: 12px; line-height: 1.4; }
   .google-button-slot { min-height: 42px; margin: 5px 0 7px; border-radius: 999px; overflow: hidden; }

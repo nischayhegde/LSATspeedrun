@@ -99,6 +99,11 @@ function warmImage(src: string): Promise<void> {
   })
 }
 
+function warmAsset(src: string): Promise<void> {
+  if (/\.(png|jpe?g|webp|gif|svg)$/i.test(src)) return warmImage(src)
+  return fetch(src, { cache: 'force-cache' }).then(() => undefined).catch(() => undefined)
+}
+
 /**
  * Load an app route in a hidden frame, then throw the frame away.
  *
@@ -159,7 +164,7 @@ export function startWarmUp(options: { stills?: readonly string[]; routes?: read
     // largest files in the deck and the whole point of them is to appear the
     // instant something has gone wrong, which is not a moment to be fetching
     // two megabytes.
-    ...(options.stills ?? []).map((src) => () => warmImage(src)),
+    ...(options.stills ?? []).map((src) => () => warmAsset(src)),
     // Last, because they are the slowest and the least likely to be needed
     // (a stills-only run never touches them), and because the queue is abandoned
     // the moment the presenter presses Start.

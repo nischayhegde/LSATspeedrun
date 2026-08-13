@@ -147,6 +147,12 @@ assume has not happened.
 | Reads | Per-stratum information need: how thin the estimate in that approach-by-type cell is, multiplied by how often offers there are declined. Never accuracy. |
 | Signal absent | A run whose strata are all well measured draws no pool, and its questions record a null forcing propensity — no counterfactual, so no part in the comparison. |
 | Broken looks like | Rows in the pool carrying a propensity of 0 or 1, which means the pool was never a pool. `strategies._in_forcing_pool` already excludes those; a rising share of them is the signal. |
+| **`difficulty_targeting`** | *live* |
+| Decides | Whether a run aims at a difficulty derived from the student's ability (Elo rating, or `published_difficulty` when the test maker stated one). |
+| Reads | Per-question Elo on `question_calibrations` (any row with a response) and the student's `LearnerRating` for that section. Empty published difficulty is the expected state of this bank. |
+| Signal absent | Targeting degrades to uniform — the same behaviour as the off arm. Those runs still enroll. A quarter of slots stay random via `calibration.exposure_draw` even on the targeted arm. |
+| Read on | Later returns of the questions the run served (`delayed`), because aiming difficulty moves immediate accuracy by construction. |
+| Broken looks like | Every `SessionItem.exposure_policy` still `blind` on a targeted run, or a crash on NULL `published_difficulty`. |
 
 ### Measured, but not by a holdout
 
@@ -172,10 +178,6 @@ considered and then deliberately refused.
 | Reads | Queue pressure and the gap between the two sections' shrunk accuracies. |
 | Signal absent | A cold account has no queue and no section gap, so the personalised shape and the fixed one coincide. The draw still happens; the comparison simply carries no contrast until there is history. |
 | Status | Owned by the economy agent, landing in parallel. The registry entry and its arms exist so that work arrives measurable. One call to `experiments.assign` wires it. |
-| **`difficulty_targeting`** | *planned* |
-| Decides | Whether a run aims at a difficulty derived from the student's accuracy. |
-| Reads | A per-question difficulty estimate, owned by the difficulty agent. |
-| Signal absent | Today the signal is absent for the entire bank. **A layer whose signal is constant is not adaptive; it is a constant.** This layer must stay off until the Elo work lands. |
 
 ### Shipped, deciding, and compared against nothing
 
@@ -571,10 +573,12 @@ organised around. Any share, rate or balance check that averages over students
 can be correct while the per-student version is catastrophic. Always ask for
 the minimum, not the mean.
 
-**A layer with a constant signal.** `difficulty_targeting` would "work" today —
-it would draw arms, record propensities and produce a reading — and the reading
-would be noise, because every question in the bank has the same difficulty. A
-layer reading a constant is a random number generator with a job title.
+**A layer with a constant signal.** `difficulty_targeting` used to be this: it
+would have drawn arms against a bank whose every item was difficulty 3. It now
+reads Elo ratings (and a published 1–5 when one exists). Empty
+`published_difficulty` is still the whole bank, and that is expected — the
+layer consumes calibration rows, not that column. A pool with no ratings
+degrades to uniform rather than inventing a middle value.
 
 **A placeholder that reads like data.** 45.8% of the bank was routed by a
 string that looked exactly like a question type. The general form: a fallback

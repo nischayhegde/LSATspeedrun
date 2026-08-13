@@ -568,7 +568,7 @@ export class HumanoidBehaviorDirector {
 
   update(delta: number) {
     for (const entry of this.entries) {
-      if (entry.suspended) continue
+      if (entry.suspended || entry.actor.lod === 'frozen') continue
       const beats = REPERTOIRE[entry.role]
       // A reduced-motion actor holds one still pose, and it holds whatever was
       // last asked of it until the page closes, because nothing advances to

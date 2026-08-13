@@ -168,16 +168,60 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 a { color: inherit; }
 h1, h2, h3, p { text-wrap: pretty; }
 
+.deck-demo-sequence {
+  position: fixed;
+  z-index: 2000;
+  top: 18px;
+  right: 18px;
+  left: auto;
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(620px, calc(100vw - 36px));
+  padding: 12px 16px;
+  border: 1px solid rgba(242, 199, 91, .32);
+  border-left-width: 4px;
+  background: rgba(9, 16, 28, .34);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  color: #f7e5b2;
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.deck-demo-sequence i { width: 22px; flex: 0 0 22px; border-top: 1px solid #c89b4b; }
+.deck-demo-sequence[data-live='true'] span { opacity: .48; }
+.deck-demo-sequence[data-live='true'] span[data-state='complete'] { color: #9bb7ab; opacity: .72; }
+.deck-demo-sequence[data-live='true'] span[data-state='active'] { color: #fff0bd; opacity: 1; }
+.deck-demo-caption {
+  width: min(460px, calc(100vw - 36px));
+  padding: 16px 18px 17px;
+  position: fixed;
+  z-index: 1999;
+  right: 18px;
+  bottom: 22px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  border: 1px solid rgba(242, 199, 91, .3);
+  border-left-width: 4px;
+  color: #f6e7c4;
+  background: rgba(9, 16, 28, .32);
+  pointer-events: none;
+}
+.deck-demo-caption small { grid-row: 1 / 3; align-self: center; color: #d5ad62; font: 800 12px var(--font-pixel); letter-spacing: .12em; }
+.deck-demo-caption strong { font: 600 21px var(--font-display); }
+.deck-demo-caption span { color: #c5d0d3; font-size: 15px; line-height: 1.32; }
 .app-shell { min-height: 100vh; min-height: 100dvh; padding-bottom: 0; }
 .app-shell.is-deck-demo { padding-bottom: 0; }
 .app-shell.is-deck-demo .app-header,
-.app-shell.is-deck-demo .mobile-nav {
-  display: none;
-}
-.app-shell.is-deck-demo > main {
-  min-height: 100vh;
-  min-height: 100dvh;
-}
+.app-shell.is-deck-demo .mobile-nav { display: none; }
+.app-shell.is-deck-demo > main { min-height: 100vh; min-height: 100dvh; }
+.app-shell.is-deck-demo[data-deck-demo='mega'] .economy-ledger,
+.app-shell.is-deck-demo[data-deck-demo='final-map'] .economy-ledger { display: none; }
 /* No `backdrop-filter` here, deliberately. A sticky full-width bar that blurs
    whatever scrolls behind it re-samples and re-rasterises that strip on every
    frame, for the whole session, on every route — the same shape of cost as the
@@ -647,19 +691,25 @@ svg.lucide { stroke-width: 2.35; }
    ================================================================ */
 
 :root {
-  --pixel-ink: #171923;
-  --pixel-night: #101725;
-  --pixel-blue: #172b40;
-  --pixel-blue-2: #264962;
+  /* One illustrated palette for the `--pixel-*` names the war room, wardrobe,
+     and rival capture still read. These used to be declared again in
+     `art/art.css` with a different gold, cyan, ink and border, so which sheet
+     loaded last decided whether those surfaces were Pixel Empire or the
+     illustrated register. The values here are the illustrated ones; paper,
+     green and red keep their old meanings (parchment, bought, blocked). */
+  --pixel-ink: #1b1a24;
+  --pixel-night: #0e1521;
+  --pixel-blue: #14202f;
+  --pixel-blue-2: #1d3245;
   --pixel-paper: #f6e7bf;
   --pixel-paper-dark: #c8a86a;
-  --pixel-gold: #f2c75b;
-  --pixel-gold-dark: #9d692c;
-  --pixel-cyan: #65c9c2;
+  --pixel-gold: #e8c87c;
+  --pixel-gold-dark: #9a6c28;
+  --pixel-cyan: #7bc8bd;
   --pixel-green: #4fa878;
   --pixel-red: #c95757;
-  --pixel-shadow: #090d15;
-  --pixel-border: 3px solid var(--pixel-ink);
+  --pixel-shadow: rgba(27, 26, 36, .8);
+  --pixel-border: 1px solid rgba(27, 26, 36, .82);
 }
 
 html { background: var(--pixel-night); }
@@ -1036,7 +1086,7 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
   width: 214px;
   padding: 8px 11px 9px;
   position: fixed;
-  z-index: 60;
+  z-index: 180;
   left: 14px;
   bottom: 14px;
   display: grid;
@@ -1080,7 +1130,8 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
    
    Standing it down here also takes the covering hit-test off the two heaviest
    routes in the app. */
-.wide-scene-shell .economy-ledger { display: none; }
+/* Ledger stays visible on Office/World. A prior hide here buried the chip
+   under the 3D canvas; z-index 180 keeps it above the scene. */
 
 /* No desktop equivalent of `--mobile-dock-clearance`, and this note is here so
    the next person does not add one on the same reasoning I did.
@@ -1113,7 +1164,7 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
   .economy-ledger[data-yield] { translate: none; }
 }
 .economy-reading { min-width: 0; position: relative; display: grid; gap: 1px; }
-.economy-reading small { overflow: hidden; color: #7cb6ac; font-family: var(--font-pixel); font-size: 6.5px; font-weight: 900; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; }
+.economy-reading small { overflow: hidden; color: #7cb6ac; font-family: var(--font-pixel); font-size: 11px; font-weight: 900; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; }
 .economy-reading strong { min-width: 0; overflow: hidden; color: #f2d489; font-family: var(--font-display); font-size: 13px; font-weight: 700; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
 /* Out of flow on purpose. In flow, a badge that appears and disappears would
    reflow the card twice per change — the exact layout thrash to avoid on
@@ -1199,7 +1250,7 @@ details[open] > summary:not(:has(svg))::after { margin-top: 2px; rotate: -135deg
    absolutely positioned, so neither widens the track — `--portrait-overhang`
    reserves the room they hang outside the circle. */
 .client-quest-card .client-portrait { margin-right: var(--portrait-overhang); }
-.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: var(--brass-deep); font-family: var(--font-pixel); font-size: 10px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
+.client-quest-card .client-portrait > small { max-width: calc(100% + var(--portrait-overhang) * 2); overflow: hidden; text-overflow: ellipsis; }.client-quest-card span, .daily-quest-card span { color: var(--brass-deep); font-family: var(--font-pixel); font-size: 11px; font-weight: 900; letter-spacing: .1em; }.daily-quest-card .daily-goals button.complete > span { background: #4e986e; }/* Empire overworld */
 .empire-game-page { width: 100%; min-height: calc(100vh - 68px); padding: 27px clamp(16px, 2.7vw, 44px) 48px; color: #f6e8bb; background: #101724; }
 /* Just the page title here — the map's own headquarters panel just below
    carries every stat, so this bar stays plain text with no boxed card. */

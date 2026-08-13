@@ -604,13 +604,17 @@ def test_a_passage_cut_short_is_finished_next_time_rather_than_abandoned(app):
         # it, because an unfinished passage outranks an untouched one.
         second = _run(app, user, size=RC_CASE_MIN_SITTING)
         assert {question.passage_id for question in second} == {started}
-        # Everything the first case left behind is in the second. The passage is
-        # re-read either way, so once there is room the case fills up with
-        # questions already answered rather than stopping short — what matters
-        # is that none of the unanswered ones are left for a third visit.
-        assert whole - {question.id for question in first} <= {
-            question.id for question in second
-        }
+        leftover = whole - {question.id for question in first}
+        second_ids = {question.id for question in second}
+        # Unanswered questions outrank already-answered ones. If the leftover
+        # still does not fit (the 16-question passage), every slot of the
+        # second sitting must still be an unanswered question rather than a
+        # re-ask while unread items remain.
+        assert leftover & second_ids
+        if leftover - second_ids:
+            assert not (second_ids - leftover)
+        else:
+            assert leftover <= second_ids
 
 
 def _answer(user_id: str, question_id: str) -> None:
@@ -671,3 +675,96 @@ def test_the_same_passage_is_not_served_twice_inside_one_case(app):
                     assert positions == list(range(positions[0], positions[0] + len(positions))), (
                         f"passage-mates arrived apart: {positions}"
                     )
+
+
+def test_a_reading_case_prefers_passages_that_carry_a_weak_type(app):
+    """Passage choice still prefers a passage that actually carries the weak type.
+
+    Argument cases fill a quota from the weak types. A reading case first
+    picks a passage that carries the type, then fills from those questions.
+    """
+    from app.type_focus import FocusType
+
+    with app.app_context():
+        inference_passages = {f"reading-case-passage-{index}" for index in (0, 1)}
+        for passage_id in inference_passages:
+            for question in Question.query.filter_by(passage_id=passage_id):
+                question.question_type = "Inference"
+        db.session.commit()
+
+        targeted = [
+            select_reading_comprehension_case(
+                6, focus_types=[FocusType(READING_COMPREHENSION, "Inference")]
+            )[0].passage_id
+            for _ in range(30)
+        ]
+        assert all(passage_id in inference_passages for passage_id in targeted)
+
+        untargeted = [
+            select_reading_comprehension_case(6, focus_types=[])[0].passage_id
+            for _ in range(40)
+        ]
+        assert any(passage_id not in inference_passages for passage_id in untargeted)
+
+
+def test_a_reading_case_fills_the_sitting_from_the_weak_type_inside_the_passage(app):
+    """Once a passage is chosen, matching RC types fill first, then the rest.
+
+    Not a fake global 60%. Passage 4 carries seven questions; five are tagged
+    Inference. A six-question sitting on that passage must serve all five
+    Inference items plus one fill.
+    """
+    from app.type_focus import FocusType
+
+    with app.app_context():
+        mixed_id = "reading-case-passage-4"
+        questions = list(
+            Question.query.filter_by(passage_id=mixed_id).order_by(Question.id)
+        )
+        assert len(questions) == 7
+        for question in questions[:5]:
+            question.question_type = "Inference"
+        db.session.commit()
+
+        served = select_reading_comprehension_case(
+            6, focus_types=[FocusType(READING_COMPREHENSION, "Inference")]
+        )
+        assert {question.passage_id for question in served} == {mixed_id}
+        assert sum(question.question_type == "Inference" for question in served) == 5
+        assert len(served) >= 6
+        assert sum(question.question_type == "Inference" for question in served) > len(served) / 2
+
+        for question in questions[:5]:
+            question.question_type = "Main Point"
+        for question in questions[:2]:
+            question.question_type = "Inference"
+        db.session.commit()
+        filled = select_reading_comprehension_case(
+            6, focus_types=[FocusType(READING_COMPREHENSION, "Inference")]
+        )
+        assert {question.passage_id for question in filled} == {mixed_id}
+        assert sum(question.question_type == "Inference" for question in filled) == 2
+        assert len(filled) >= 6
+
+
+def test_a_reading_case_enrolls_in_weak_type_targeting(app):
+    """A reading case can act on RC focus types, so it belongs in the trial."""
+    from app import services
+    from app.models import LayerAssignment
+    from app.type_focus import FocusType
+
+    with app.app_context():
+        user = _fresh_user(app, "rc-targeting@example.test")
+        app.config["PRACTICE_RC_CASE_SHARE"] = 1.0
+        focus = [FocusType(READING_COMPREHENSION, "Main Point")]
+        original = services.rolling_focus
+        services.rolling_focus = lambda _user_id: focus
+        try:
+            session = create_study_session(user, count=6)
+        finally:
+            services.rolling_focus = original
+        row = LayerAssignment.query.filter_by(
+            layer="weak_type_targeting", session_id=session.id
+        ).one()
+        assert "Main Point" in (row.signal or "")
+        assert row.arm in {"targeted", "untargeted"}

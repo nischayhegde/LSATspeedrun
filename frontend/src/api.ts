@@ -225,6 +225,8 @@ export const api = {
     }),
   purchase: (assetKey: string) =>
     request<{ game: GameState }>('/game/purchases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
+  releaseStaff: (assetKey: string) =>
+    request<{ game: GameState }>('/game/releases', { method: 'POST', body: JSON.stringify({ asset_key: assetKey }) }),
   secureDistrict: (districtKey: string) =>
     request<{ counsel: SecuredDistrict; game: GameState }>('/game/territory', {
       method: 'POST',

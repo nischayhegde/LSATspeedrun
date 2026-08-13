@@ -328,6 +328,9 @@ def test_a_type_filtered_drill_is_not_personalised_at_all(app):
             services.create_study_session(user, count=SITTING, question_type="Assumption")
         finally:
             services.sequencing_profile = original
+        from app.models import LayerAssignment
+
+        assert LayerAssignment.query.filter_by(layer="run_sequencing").count() == 0
     assert calls == []
 
 
@@ -352,6 +355,66 @@ def test_the_profile_carries_the_evidence_it_decided_from(app):
         profile.lr_accuracy, profile.rc_accuracy
     )
     assert profile.review_share == _review_share(profile.overdue, profile.tracked, SITTING)
+
+
+def test_create_study_session_draws_run_sequencing(app):
+    """The layer is live: an unfiltered run writes an assignment, a drill does not."""
+    from app.models import LayerAssignment
+    from app import services
+
+    with app.app_context():
+        user = _student("sequencing-live@example.test")
+        _bank(20, question_type="Assumption")
+        db.session.add(
+            PlayerProfile(
+                user_id=user.id,
+                lawyer_name="Ada Rowan",
+                firm_name="Rowan Legal",
+                character_gender="female",
+            )
+        )
+        db.session.commit()
+        app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
+        session = services.create_study_session(user, count=SITTING)
+        row = LayerAssignment.query.filter_by(
+            layer="run_sequencing", session_id=session.id
+        ).one()
+        assert row.arm in {"personalised", "fixed"}
+
+
+def test_the_fixed_sequencing_arm_uses_the_old_shares(app):
+    """Holdback 1.0 is the off arm: review share is the old half, not the profile."""
+    from app import services
+    from app.models import LayerAssignment, SessionItem
+
+    with app.app_context():
+        user = _student("sequencing-fixed@example.test")
+        _answer(user, section="Logical Reasoning", correct=4, wrong=40)
+        _bank(20, question_type="Assumption")
+        db.session.add(
+            PlayerProfile(
+                user_id=user.id,
+                lawyer_name="Ada Rowan",
+                firm_name="Rowan Legal",
+                character_gender="female",
+            )
+        )
+        db.session.commit()
+        profile = sequencing_profile(user.id, SITTING)
+        assert profile.review_share != REVIEW_SHARE
+        app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
+        app.config["ADAPTIVE_LAYERS"] = {"run_sequencing": {"holdback": 1.0}}
+        session = services.create_study_session(user, count=SITTING)
+        row = LayerAssignment.query.filter_by(
+            layer="run_sequencing", session_id=session.id
+        ).one()
+        assert row.arm == "fixed"
+        repairs = SessionItem.query.filter_by(
+            session_id=session.id, from_review_queue=True
+        ).count()
+        expected = max(1, int(SITTING * REVIEW_SHARE + 0.5))
+        assert repairs <= expected
+        app.config.pop("ADAPTIVE_LAYERS", None)
 
 
 # --- Fixtures ----------------------------------------------------------------

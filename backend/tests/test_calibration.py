@@ -21,15 +21,13 @@ that the check belongs in the suite rather than in a report nobody re-runs.
 
 from __future__ import annotations
 
-import io
-import tokenize
 from pathlib import Path
 
 import pytest
 
 from app import calibration
 from app.extensions import db
-from app.models import Attempt, LearnerRating, Question, QuestionCalibration, SessionItem, User
+from app.models import Attempt, LayerAssignment, LearnerRating, Question, QuestionCalibration, SessionItem, User
 
 from test_progress import (  # noqa: F401
     add_question,
@@ -307,6 +305,7 @@ def test_every_seeder_declares_its_answers_synthetic():
         )
         # Re-running a seeder must not stack a second history on the first.
         assert "delete(QuestionCalibration)" in source, f"{name} does not clear the ratings it wrote"
+        assert "delete(LayerAssignment)" in source, f"{name} does not clear the layer assignments it wrote"
 
 
 def test_recording_a_response_writes_both_sides_of_the_match(app):  # noqa: F811
@@ -383,39 +382,124 @@ def test_the_exposure_draw_is_stable_and_reserves_a_quarter_of_slots():
         assert draw["propensity"] == pytest.approx(expected)
 
 
-def _code_only(source: str) -> str:
-    """`source` with comments and string literals dropped.
-
-    The assertions below are about what selection *executes*. The region they
-    read now also holds `SequencingProfile`, whose docstring discusses where a
-    per-item target would belong, so matching raw text fires on prose that is
-    describing the boundary rather than crossing it.
-    """
-    kept = []
-    for token in tokenize.generate_tokens(io.StringIO(source).readline):
-        name = tokenize.tok_name.get(token.type, "")
-        if token.type in (tokenize.COMMENT, tokenize.STRING) or name.startswith("FSTRING"):
-            continue
-        kept.append(token.string)
-    return " ".join(kept)
+def test_published_logit_treats_empty_as_missing():
+    assert calibration.published_logit(None) is None
+    assert calibration.published_logit("") is None
+    assert calibration.published_logit(0) is None
+    assert calibration.published_logit(6) is None
+    assert calibration.published_logit("nope") is None
+    assert calibration.published_logit(1) == pytest.approx(-1.6)
+    assert calibration.published_logit(3) == pytest.approx(0.0)
+    assert calibration.published_logit(5) == pytest.approx(1.6)
 
 
-def test_selection_still_ignores_difficulty_entirely():
-    """The scope boundary, asserted rather than remembered.
+def test_selection_does_not_crash_when_published_difficulty_is_empty(app):  # noqa: F811
+    """6886 NULL published ratings is the live bank; targeting must still run."""
+    from app.services import select_random_questions
 
-    This agent's job was to produce the signal, not to consume it: session
-    construction belongs to another workstream and has been left a seam. If
-    selection starts reading a rating, it must also start calling
-    `exposure_draw` and writing `SessionItem.exposure_policy`, or the estimate
-    silently loses the randomisation that identifies it. This test failing is
-    the reminder to do the second half.
-    """
-    services = (APP_DIR / "services.py").read_text(encoding="utf-8")
-    selection = services[services.index("def select_random_questions") : services.index("def select_diagnostic_questions")]
-    selection = _code_only(selection)
-    assert "calibration" not in selection
-    assert "difficulty" not in selection
-    assert "exposure_policy" not in selection
+    with app.app_context():
+        assert Question.query.filter(Question.published_difficulty.isnot(None)).count() == 0
+        picked = select_random_questions(
+            4, section="Logical Reasoning", target_difficulty=True
+        )
+        assert len(picked) == 4
+
+
+def test_selection_aims_near_the_students_ability_when_targeting(app):  # noqa: F811
+    """Without a session id every slot is targeted, so mix should follow θ."""
+    from app.models import LearnerRating, QuestionCalibration
+    from app.services import select_random_questions
+
+    with app.app_context():
+        questions = Question.query.filter_by(section="Logical Reasoning").all()
+        for question in questions:
+            db.session.add(
+                QuestionCalibration(
+                    question_id=question.id,
+                    rating=-2.0 if question.question_type == "Flaw" else 2.0,
+                    responses=8,
+                    information=3.0,
+                    status="provisional",
+                    origin="responses",
+                )
+            )
+        learner = student("aim-near")
+        db.session.add(
+            LearnerRating(
+                user_id=learner,
+                scope="Logical Reasoning",
+                rating=-2.0,
+                responses=20,
+                information=5.0,
+            )
+        )
+        db.session.commit()
+        picked = []
+        for _ in range(30):
+            run = select_random_questions(
+                4,
+                user_id=learner,
+                section="Logical Reasoning",
+                target_difficulty=True,
+            )
+            picked.extend(question.question_type for question in run)
+        assert picked.count("Flaw") > picked.count("Assumption")
+
+
+def test_a_targeted_run_records_exposure_draw_policies(app):  # noqa: F811
+    from app.models import PlayerProfile
+    from app.services import create_study_session
+
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0
+    app.config["ADAPTIVE_LAYERS"] = {"difficulty_targeting": {"holdback": 0.0}}
+    with app.app_context():
+        user = User.query.filter_by(email="exposure-on@example.test").first()
+        if user is None:
+            user = User(email="exposure-on@example.test", display_name="exposure-on")
+            db.session.add(user)
+            db.session.flush()
+        db.session.add(
+            PlayerProfile(
+                user_id=user.id,
+                lawyer_name="Ada",
+                firm_name="Rowan",
+                character_gender="female",
+            )
+        )
+        db.session.commit()
+        session = create_study_session(user, count=4)
+        policies = {item.exposure_policy for item in session.items}
+        assert policies <= {"random", "targeted"}
+        assert "blind" not in policies
+        row = LayerAssignment.query.filter_by(
+            layer="difficulty_targeting", session_id=session.id
+        ).one()
+        assert row.arm == "targeted"
+
+
+def test_a_uniform_run_keeps_exposure_blind(app):  # noqa: F811
+    from app.models import PlayerProfile
+    from app.services import create_study_session
+
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0
+    app.config["ADAPTIVE_LAYERS"] = {"difficulty_targeting": {"holdback": 1.0}}
+    with app.app_context():
+        user = User.query.filter_by(email="exposure-off@example.test").first()
+        if user is None:
+            user = User(email="exposure-off@example.test", display_name="exposure-off")
+            db.session.add(user)
+            db.session.flush()
+        db.session.add(
+            PlayerProfile(
+                user_id=user.id,
+                lawyer_name="Ada",
+                firm_name="Rowan",
+                character_gender="female",
+            )
+        )
+        db.session.commit()
+        session = create_study_session(user, count=4)
+        assert {item.exposure_policy for item in session.items} == {"blind"}
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +508,10 @@ def test_selection_still_ignores_difficulty_entirely():
 
 
 def test_answering_a_question_rates_it(app):  # noqa: F811
+    app.config["PRACTICE_RC_CASE_SHARE"] = 0
+    # Pin the difficulty layer off so this test is about the rating write path,
+    # not about which exposure policy selection happened to draw.
+    app.config["ADAPTIVE_LAYERS"] = {"difficulty_targeting": {"holdback": 1.0}}
     client = app.test_client()
     headers = login(client, "calibrate@example.test")
     create_game(client, headers)

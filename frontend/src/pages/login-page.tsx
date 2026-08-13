@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Play, Scale, Sparkles, TrendingUp } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from '../api'
 import { ScalesMark } from '../art-2d/marks'
@@ -25,6 +25,9 @@ const OfficeScene = lazy(() => import('../game-art').then((m) => ({ default: m.O
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: string } | null)?.from
+  const resume = from && from !== '/login' ? from : null
   const queryClient = useQueryClient()
   const { play } = useSound()
   const buttonRef = useRef<HTMLDivElement>(null)
@@ -33,7 +36,7 @@ export function LoginPage() {
   const existing = useQuery({ queryKey: ['me'], queryFn: api.me })
 
   useEffect(() => {
-    if (existing.data?.user) navigate(existing.data.user.next_route, { replace: true })
+    if (existing.data?.user) navigate(resume || existing.data.user.next_route, { replace: true })
   }, [existing.data, navigate])
 
   useEffect(() => {
@@ -43,7 +46,7 @@ export function LoginPage() {
         const data = await api.googleLogin(credential)
         storeAuthenticatedUser(queryClient, data)
         void play('navigate', { seed: 'google-login', intensity: .5 })
-        navigate(data.user.next_route)
+        navigate(resume || data.user.next_route)
       } catch (error) {
         setAuthError(error)
       }
@@ -75,7 +78,7 @@ export function LoginPage() {
     onSuccess: (data) => {
       storeAuthenticatedUser(queryClient, data)
       void play('navigate', { seed: 'dev-login', intensity: .5 })
-      navigate(data.user.next_route)
+      navigate(resume || data.user.next_route)
     },
   })
 
@@ -107,16 +110,22 @@ export function LoginPage() {
           <span className="eyebrow">THE BAR IS OPEN</span>
           <h2>Enter your firm</h2>
           <p>Your cases, cash, reputation, character, office, and every acquisition stay with your account.</p>
-          <div ref={buttonRef} className="google-button-slot" />
-          {!config.isLoading && !config.data?.google_client_id && (
+          {config.data?.google_client_id ? (
+            <>
+              <div ref={buttonRef} className="google-button-slot" />
+              {authError && <ErrorNotice error={authError} />}
+            </>
+          ) : !config.isLoading ? (
             <div className="config-note">Google sign-in needs <code>GOOGLE_CLIENT_ID</code>.</div>
-          )}
+          ) : null}
           {config.data?.dev_auth_enabled && (
-            <button className="secondary-button full" onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
-              <Play size={17} /> {devLogin.isPending ? 'Opening the office…' : 'Enter local development firm'}
-            </button>
+            <>
+              <button className="secondary-button full" onClick={() => devLogin.mutate()} disabled={devLogin.isPending}>
+                <Play size={17} /> {devLogin.isPending ? 'Opening the office…' : 'Enter local development firm'}
+              </button>
+              {devLogin.error && <ErrorNotice error={devLogin.error} />}
+            </>
           )}
-          {(authError || devLogin.error) && <ErrorNotice error={authError || devLogin.error} />}
           <small>No energy. No loot boxes. No paid answer power.</small>
         </div>
       </aside>

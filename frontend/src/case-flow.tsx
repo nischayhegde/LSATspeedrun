@@ -656,6 +656,30 @@ export function QuestionFlow({ session }: { session: StudySession }) {
   const coachingReady = Boolean(coachingFeedback)
   const gradingUnavailable = coaching.data?.status === 'unavailable'
   const gradingPending = !coachingReady && !gradingUnavailable && !coaching.error && Boolean(result?.feedback_released)
+  useAutoplay({
+    eligible: !isAssessment && Boolean(item),
+    totalItems: session.total_items,
+    itemId: item?.id,
+    position: item?.position,
+    choiceLabels: item?.question.choices.map((choice) => choice.label) ?? [],
+    resultId: result?.attempt_id,
+    strategyPending: Boolean(item?.strategy_trial && strategyApplied === null && !result),
+    canSubmit: Boolean(
+      item && !result && selected && reasoningComplete
+      && !(item.strategy_trial && strategyApplied === null)
+      && strategyGate.satisfied && !submit.isPending && !pageTurning,
+    ),
+    submitFailed: Boolean(submit.error),
+    coachingRequested: !coachingWanted || coaching.isFetched || Boolean(coaching.error),
+    coachingReady,
+    advanceFailed: Boolean(continueCases.error),
+    answerCard: answerCardRef,
+    verdict: verdictRef,
+    applyStrategy: takeSuggestedApproach,
+    select: chooseAnswer,
+    submit: submitAnswer,
+    advance: goToNextCase,
+  })
 
   /* Inert unless the URL carries `?autoplay=`, which nothing does by default.
      Every input below is state this screen already had; the driver adds no

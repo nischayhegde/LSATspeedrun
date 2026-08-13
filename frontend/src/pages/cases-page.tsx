@@ -12,8 +12,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
-import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
+import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { ClientPortrait } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
 import { useSound } from '../sound'
@@ -49,9 +49,9 @@ const PRACTICE_TABS: ReadonlyArray<{ key: PracticeTab; label: string }> = [
   { key: 'mega', label: 'Mega-litigation' },
 ]
 
-const namedPracticeTab = (value: string | null): PracticeTab | null =>
-  (PRACTICE_TABS.find((item) => item.key === value)?.key ?? null)
-
+function namedPracticeTab(value: string | null): PracticeTab | null {
+  return PRACTICE_TABS.find((item) => item.key === value)?.key ?? null
+}
 
 export function CasesLobbyPage() {
   const navigate = useNavigate()
@@ -115,7 +115,7 @@ export function CasesLobbyPage() {
     onSuccess: ({ session }) => {
       setMegaGateOpen(false)
       void play('file-open', { seed: `diagnostic:${session.id}`, intensity: .64 })
-      navigate(`/cases/${session.id}`)
+      navigate(`/cases/${session.id}${deckMegaDemo ? '?deckDemo=mega' : ''}`)
     },
   })
   const megaQuery = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
@@ -132,7 +132,18 @@ export function CasesLobbyPage() {
     setTab('mega')
     setDemoBeat(0)
     void (async () => {
-      await demoSleep(1_600, abort.signal)
+      const live = megaQuery.data?.session ?? null
+      if (live?.status === 'in_progress' && live.mode === 'diagnostic') {
+        try {
+          await api.abandonSession(live.id)
+          await queryClient.invalidateQueries({ queryKey: ['diagnostic'] })
+          await waitForPainted('.mega-start-button', 6_000, abort.signal)
+        } catch {
+          /* leftover form already closed */
+        }
+      }
+      if (cancelled) return
+      await demoSleep(900, abort.signal)
       if (cancelled) return
       const panel = await waitForPainted('.mega-panel', 8_000, abort.signal)
       if (cancelled || !panel) return
@@ -266,7 +277,7 @@ export function CasesLobbyPage() {
   const megaSize = openMegaForm?.total_items || megaQuery.data?.latest?.session.total_items || 75
   const megaMinutes = openMegaForm?.target_minutes || megaQuery.data?.latest?.session.target_minutes || 105
   const openMega = () => {
-    if (liveMega) navigate(`/cases/${liveMega.id}`)
+    if (liveMega) navigate(`/cases/${liveMega.id}${deckMegaDemo ? '?deckDemo=mega' : ''}`)
     else setMegaGateOpen(true)
   }
   // A one-line read of the queue, so the header answers "what is in here"
@@ -450,7 +461,7 @@ export function CasesLobbyPage() {
               pending={startDiagnostic.isPending}
               error={startDiagnostic.error}
               onStart={openMega}
-              onResume={(id) => navigate(`/cases/${id}`)}
+              onResume={(id) => navigate(`/cases/${id}${deckMegaDemo ? '?deckDemo=mega' : ''}`)}
             />
           </Suspense>
         )}

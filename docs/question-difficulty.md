@@ -346,18 +346,19 @@ Four rules, in order of how expensive they are to get wrong:
    a difficulty-driven decision.
 4. **Never write `published_difficulty`.** A test in the suite fails if you do.
 
-### If you make selection read difficulty — the seam
+### Selection reads difficulty through `exposure_draw`
 
-Selection does **not** read difficulty today, and a test asserts that
-(`test_selection_still_ignores_difficulty_entirely`). When it starts to, the
-randomisation that identifies the estimate has to arrive at the same time, or
-the ratings quietly stop measuring items. Four steps, all of them required:
+`select_random_questions` and the in-passage fill of
+`select_reading_comprehension_case` aim targeted slots at the student's
+section ability. Empty `published_difficulty` does not crash: Elo ratings are
+used instead, and an unrated item gets an exploration weight. The
+`difficulty_targeting` layer is live; its off arm is uniform. Four steps, all
+of them required, and all of them now taken:
 
 1. Call `calibration.exposure_draw(user_id, session_id, position)` **once per
    slot, before choosing the question**.
-2. On `"random"` (25% of slots), choose exactly as today, with no reference to
-   difficulty whatsoever.
-3. On `"targeted"`, choose freely.
+2. On `"random"` (25% of slots), choose without reference to difficulty.
+3. On `"targeted"`, weight remaining candidates toward the student's θ.
 4. **Write the returned policy to `SessionItem.exposure_policy`.**
    `submit_attempt` copies it to the attempt and `record_response` routes the
    update.
@@ -394,10 +395,10 @@ with `--reset`; without it every response is counted twice.
 
 ## 6. What was deliberately left alone
 
-- **Question selection.** `select_random_questions`, `_weight_toward_focus`,
-  `scheduling.interleave` and `due_for_review` do not read difficulty and were
-  not changed. Session construction belongs to another workstream; § 5 above is
-  the contract for plugging into it.
+- **Question selection.** `select_random_questions`, `_weight_toward_focus`
+  and the in-passage RC fill read difficulty when `difficulty_targeting` is
+  on, behind `calibration.exposure_draw`. `scheduling.interleave` and
+  `due_for_review` do not.
 - **`app/strategies.py`**, owned by another workstream. `exposure_draw` copies
   its randomisation idea rather than importing it.
 - **`ReviewQueueItem.difficulty`** — the FSRS memory model, a different quantity

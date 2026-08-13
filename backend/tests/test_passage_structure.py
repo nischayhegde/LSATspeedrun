@@ -445,6 +445,21 @@ def test_the_artifact_reviewer_is_shown_the_parts_the_student_annotated(app):
     assert re.sub(r"\s+", "", " ".join(parts.values())) == re.sub(r"\s+", "", _rc_passage())
 
 
+def test_the_coaching_prompt_is_shown_the_passage_parts(app):
+    """The grader used to get the whole blob and no index, same defect as the artifact path."""
+    from app.coaching import _question_data
+
+    with app.app_context():
+        attempt = _rc_attempt("passage_map")
+        data = _question_data(attempt.session_item.question)
+
+    assert data["paragraph_source"] == SOURCE_DERIVED
+    assert data["paragraph_offsets"]
+    parts = data["passage_parts"]
+    assert len(parts) >= 2
+    assert data["passage"] == _rc_passage()
+
+
 def test_a_gate_that_annotates_nothing_is_still_shown_the_passage(app):
     """Three of the six Reading Comprehension gates have no segmented field.
 
@@ -602,15 +617,15 @@ def test_the_rubric_names_the_passage_and_can_diagnose_a_passage_error(app, monk
 def test_both_prompt_versions_moved_because_the_inputs_did():
     """A grade from before these changes is not comparable with one from after.
 
-    The coaching version is v5 rather than the v4 this branch wrote, because the
-    branch it merged into had independently bumped its own v4 for the measured
-    difficulty payload. Both changes are in this prompt, so it is neither of the
-    two v4s, and the string has to say so or one version covers two prompts.
+    The coaching version is v6 rather than the v5 this used to pin, because the
+    grader now receives passage parts and their provenance as well as the
+    measured difficulty payload. A grade from before that is not comparable
+    with one from after, and the string has to say so.
     """
     from app.coaching import PROMPT_VERSION
 
-    assert PROMPT_VERSION == "coaching-v5-passage-approach-and-measured-difficulty"
-    assert "passage-approach" in PROMPT_VERSION
+    assert PROMPT_VERSION == "coaching-v6-passage-parts-and-measured-difficulty"
+    assert "passage-parts" in PROMPT_VERSION
     assert "measured-difficulty" in PROMPT_VERSION
     assert ARTIFACT_PROMPT_VERSION.startswith("artifact-v2")
     assert "advisory" in ARTIFACT_PROMPT_VERSION

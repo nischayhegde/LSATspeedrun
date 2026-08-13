@@ -1,5 +1,5 @@
 import { type KeyboardEvent, useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
   Award,
@@ -14,15 +14,14 @@ import {
   Sparkles,
   Star,
   Trophy,
-  UserRound,
   UsersRound,
   Wrench,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
-import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
+import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
 import { ClientPortrait, PixelAssetArtwork, StaffRoster } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
 import { officeStaffStationFor, officeVisualFor, type OfficeStaffStation } from '../art/office-manifest'
@@ -31,7 +30,7 @@ import { RivalWarRoom } from '../rival-war-room'
 import { useSound } from '../sound'
 import { formatMoneyDelta } from '../format'
 import { MOTION_TIMING, useDelta, useRollupInt } from '../motion'
-import type { CharacterGender, GameAsset, GameClient, GameState } from '../types'
+import type { GameAsset, GameClient, GameState } from '../types'
 import { effectiveClient, storeGame, useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
 import '../firm-page.css'
@@ -50,9 +49,8 @@ const firmTabs: Array<{ key: FirmTab; label: string; icon: typeof Wrench }> = [
   { key: 'decor', label: 'Decor', icon: Lamp },
   { key: 'staff', label: 'Staff', icon: UsersRound },
   { key: 'clients', label: 'Clients', icon: BriefcaseBusiness },
-  /* The tab is named for what it is now for. A connection's whole effect is
-     the districts it opens, so the retainer ledger leads the panel and the
-     networks that gate it follow underneath. */
+  /* URL key stays `connections` so existing deep links and the tour keep
+     working. The label is Districts: that is the decision this tab is for. */
   { key: 'connections', label: 'Districts', icon: Landmark },
   { key: 'rivals', label: 'Rivals', icon: Trophy },
 ]
@@ -275,10 +273,10 @@ export function FirmPage() {
       const wallet = await waitForPainted('.firm-wallet', 8_000, abort.signal)
       if (cancelled) return
       window.scrollTo({ top: 0, behavior: 'auto' })
-      const preferred = await waitForPainted(`[data-asset-key="${TREASURY_ASSET}"]`, 8_000, abort.signal)
+      const preferred = await waitForPainted(`#asset-${TREASURY_ASSET}, [data-asset-key="${TREASURY_ASSET}"]`, 8_000, abort.signal)
       const purchasable = preferred?.querySelector<HTMLButtonElement>('.purchase-row .primary-button:not(:disabled)')
         ? preferred
-        : Array.from(document.querySelectorAll<HTMLElement>('[data-asset-key]')).find((card) => (
+        : Array.from(document.querySelectorAll<HTMLElement>('[id^="asset-"], [data-asset-key]')).find((card) => (
           Boolean(card.querySelector('.purchase-row .primary-button:not(:disabled)'))
         )) ?? preferred
       const card = purchasable
@@ -345,6 +343,13 @@ export function FirmPage() {
       window.setTimeout(() => setJustBought((current) => (current === key ? null : current)), ACQUIRED_HOLD_MS)
     },
   })
+  const release = useMutation({
+    mutationFn: api.releaseStaff,
+    onSuccess: ({ game }, key) => {
+      storeGame(queryClient, game)
+      void play('paper', { id: `release:${game.id}:${key}`, seed: key, intensity: .4 })
+    },
+  })
   const advance = useMutation({
     mutationFn: api.advanceFirm,
     onSuccess: ({ game }, tier) => {
@@ -364,13 +369,6 @@ export function FirmPage() {
       void play('client', { seed: key, intensity: .72 })
       setJustActivated(key)
       window.setTimeout(() => setJustActivated((current) => (current === key ? null : current)), ACQUIRED_HOLD_MS)
-    },
-  })
-  const appearance = useMutation({
-    mutationFn: (characterGender: CharacterGender) => api.updateGame({ character_gender: characterGender }),
-    onSuccess: ({ game }) => {
-      storeGame(queryClient, game)
-      void play('paper', { seed: game.character_gender, intensity: .32 })
     },
   })
 
@@ -421,7 +419,7 @@ export function FirmPage() {
   const looseAddresses = Array.from(tierForAddress.keys()).filter((address) => !groupedAddresses.has(address))
   const visibleAssets = assets.filter((item) =>
     (catalogRegion === 'all' || item.region === catalogRegion)
-    && (catalogView === 'all' || (catalogView === 'ready' ? item.available : item.owned)),
+    && (tab === 'connections' || catalogView === 'all' || (catalogView === 'ready' ? item.available : item.owned)),
   )
   const unlockedStaff = game.catalog.assets.filter((item) => item.type === 'staff' && (item.owned || item.available))
   const visibleClients = game.catalog.clients.filter((item) =>
@@ -443,14 +441,17 @@ export function FirmPage() {
     if (nextIndex === null) return
     event.preventDefault()
     const next = firmTabs[nextIndex].key
-    void play('tab', { seed: next, intensity: .32 })
-    setTab(next)
+    selectTab(next)
     window.requestAnimationFrame(() => document.getElementById(`firm-tab-${next}`)?.focus())
   }
   const selectTab = (next: FirmTab) => {
     if (next === tab) return
     void play('tab', { seed: next, intensity: .32 })
-    setTab(next)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', next)
+    if (next !== 'connections') nextParams.delete('district')
+    const search = nextParams.toString()
+    navigate({ pathname: '/firm', search: search ? `?${search}` : '' }, { replace: true })
   }
   /* Take the player from a face on the firm floor to the card that hires them.
      The two filters above the grid can both be hiding that card — a candidate
@@ -522,15 +523,6 @@ export function FirmPage() {
           {cashDelta !== null && <span className={`wallet-delta ${cashDelta < 0 ? 'is-debit' : 'is-credit'}`} role="status">{formatMoneyDelta(cashDelta)}</span>}
           <span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
           <span className={`wallet-lease ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}><CircleDollarSign size={15} /> {game.upkeep.completed ? 'Lease retired' : `${formatMoney(game.upkeep.daily_rent)} daily rent${game.upkeep.rent_arrears ? ` · ${formatMoney(game.upkeep.rent_arrears)} due` : ''}`}</span>
-          <button
-            className="appearance-button"
-            disabled={appearance.isPending}
-            aria-label={`Switch to the ${game.character_gender === 'female' ? 'male' : 'female'} character`}
-            onClick={() => appearance.mutate(game.character_gender === 'female' ? 'male' : 'female')}
-          >
-            <UserRound size={14} />
-            {appearance.isPending ? 'Updating character…' : <>Character: {game.character_gender === 'female' ? 'Female' : 'Male'}<span>Switch</span></>}
-          </button>
         </div>
         {/* An honour grants nothing, on purpose: the economy is tuned around
             three to six cases per upgrade, and a prize for reaching a hundred
@@ -562,7 +554,7 @@ export function FirmPage() {
             below is only ever the raw price list. */}
         {tab === 'rivals' && <RivalWarRoom game={game} onShowOnMap={(asset) => navigate(`/map?rival=${asset.key}`)} />}
         {/* Signing a district is a firm interaction, so the counsel ledger is in
-            the firm tab. It leads the panel and the connection catalog that
+            the firm tab. It leads the panel and the network catalog that
             gates it follows, which is the order the decision is made in. */}
         {tab === 'connections' && (
           <RetainerLedger
@@ -572,11 +564,13 @@ export function FirmPage() {
             onShowGate={callAssetCard}
           />
         )}
-        <div className="catalog-toolbar">
-          <div><span>CATALOG VIEW</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
-          <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
-            {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
-          </div>
+        <div className={`catalog-toolbar${tab === 'connections' ? ' catalog-toolbar-districts' : ''}`}>
+          <div><span>{tab === 'connections' ? 'DISTRICT GATES' : 'CATALOG VIEW'}</span><strong>{tab === 'clients' ? visibleClients.length : visibleAssets.length} RESULTS</strong></div>
+          {tab !== 'connections' && (
+            <div className="catalog-view-buttons" role="group" aria-label="Filter catalog status">
+              {(['all', 'ready', 'owned'] as const).map((view) => <button key={view} className={catalogView === view ? 'active' : ''} onClick={() => selectCatalogView(view)}>{view === 'owned' && tab === 'clients' ? 'Active' : view}</button>)}
+            </div>
+          )}
           {/* Was "CITY REGION · All districts", which is what made this read as
               a rival geography to the ledger's five regions -- and "districts"
               is flatly the wrong noun, since these are the firm's own past
@@ -676,10 +670,17 @@ export function FirmPage() {
               <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{benefitWithoutDistrictCount(item.benefit, item.type === 'connection' && Boolean(item.districts?.length))}</span></div>
               {item.type === 'connection' && <ConnectionDistricts asset={item} />}
               <RequirementLine asset={item} game={game} />
+              {item.type === 'staff' && (
+                <p className="staff-hire-note">
+                  {item.owned
+                    ? 'Release takes them off the floor. Bonuses leave with them, and the hire price is not refunded.'
+                    : 'A hire can be released later. The price is not refunded.'}
+                </p>
+              )}
               {/* Locked is named before cost, because an unmet requirement is the
                   blocker that earning more cannot clear. Leaving it out labelled a
                   disabled button 'Purchase', which reads as an unresponsive click. */}
-              <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong><button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : 'Purchase'}</button></div>
+              <div className="purchase-row"><strong>{item.list_cost && item.list_cost > item.cost ? <><del>{formatMoney(item.list_cost)}</del>{formatMoney(item.cost)} <small>−{(item.discount_bps! / 100).toFixed(0)}%</small></> : formatMoney(item.cost)}</strong>{item.owned && item.type === 'staff' ? <button type="button" className="secondary-button staff-release" disabled={release.isPending} onClick={() => release.mutate(item.key)}>{release.isPending && release.variables === item.key ? 'Releasing…' : 'Release'}</button> : <button className="primary-button" disabled={item.owned || !item.available || game.cash < item.cost || purchase.isPending} onClick={() => purchase.mutate(item.key)}>{item.owned ? 'Installed' : !item.available ? 'Locked' : game.cash < item.cost ? 'Keep earning' : item.type === 'staff' ? 'Hire' : 'Purchase'}</button>}</div>
               {/* Where to go and look at what you bought.
                   Every asset class that changes the room now has one, not just
                   decor: you could buy a rug and never be sent to look at it,
@@ -719,7 +720,7 @@ export function FirmPage() {
         </div>
         )}
       </div>
-      {(purchase.error || advance.error || client.error || appearance.error) && <ErrorNotice error={purchase.error || advance.error || client.error || appearance.error} />}
+      {(purchase.error || release.error || advance.error || client.error) && <ErrorNotice error={purchase.error || release.error || advance.error || client.error} />}
     </div>
   )
 }

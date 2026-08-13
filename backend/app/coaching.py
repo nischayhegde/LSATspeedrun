@@ -46,7 +46,7 @@ from .models import Attempt, Question
 # The two bumps above landed on separate branches, each calling itself v4. This
 # prompt carries both, so it is neither of them: v5 names both changes rather
 # than letting one prompt reuse a version string that described only half of it.
-PROMPT_VERSION = "coaching-v5-passage-approach-and-measured-difficulty"
+PROMPT_VERSION = "coaching-v6-passage-parts-and-measured-difficulty"
 
 ERROR_CODES = {
     "misread_stem",
@@ -410,7 +410,7 @@ def _difficulty_for_prompt(question: Question) -> dict:
 
 
 def _question_data(question: Question) -> dict:
-    return {
+    data = {
         "section": question.section,
         "question_type": question.question_type,
         # The publisher's own rating, and NULL on every item in this bank
@@ -424,6 +424,16 @@ def _question_data(question: Question) -> dict:
         "choices": [{"label": choice.label, "text": choice.canonical_text} for choice in question.choices],
         "verified_correct_label": question.correct_answer,
     }
+    passage = question.passage
+    if passage is not None:
+        from .enforcement import passage_parts
+
+        parts = passage_parts(passage)
+        data["paragraph_offsets"] = passage.paragraph_offsets
+        data["paragraph_source"] = passage.paragraph_source
+        if parts:
+            data["passage_parts"] = dict(enumerate(parts))
+    return data
 
 
 def _assigned_approach(attempt: Attempt) -> dict | None:

@@ -2296,6 +2296,49 @@ def test_purchases_and_passive_income_are_account_bound(app):
         assert private not in manager
 
 
+def test_staff_can_be_released_and_rehired(app):
+    client = app.test_client()
+    headers = login(client, "release-staff@example.test")
+    create_game(client, headers)
+    key = "intake_specialist"
+    with app.app_context():
+        profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == "release-staff@example.test").one()
+        profile.cash = ASSET_BY_KEY[key]["cost"] * 2 + ASSET_BY_KEY["repaired_desk"]["cost"] + 400
+        db.session.commit()
+
+    hired = client.post("/v1/game/purchases", json={"asset_key": key}, headers=headers)
+    assert hired.status_code == 200
+    assert key in hired.json["game"]["owned_assets"]
+    cash_after_hire = hired.json["game"]["cash"]
+
+    missing = client.post("/v1/game/releases", json={"asset_key": "not_a_person"}, headers=headers)
+    assert missing.status_code == 404
+    assert missing.json["error"]["code"] == "asset_not_found"
+
+    released = client.post("/v1/game/releases", json={"asset_key": key}, headers=headers)
+    assert released.status_code == 200
+    assert key not in released.json["game"]["owned_assets"]
+    assert released.json["game"]["cash"] == cash_after_hire
+    with app.app_context():
+        profile = PlayerProfile.query.join(PlayerProfile.user).filter(User.email == "release-staff@example.test").one()
+        assert PlayerAsset.query.filter_by(profile_id=profile.id, asset_key=key).count() == 0
+        assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="staff_release").count() == 1
+
+    again = client.post("/v1/game/releases", json={"asset_key": key}, headers=headers)
+    assert again.status_code == 409
+    assert again.json["error"]["code"] == "not_owned"
+
+    desk = client.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=headers)
+    assert desk.status_code == 200
+    not_staff = client.post("/v1/game/releases", json={"asset_key": "repaired_desk"}, headers=headers)
+    assert not_staff.status_code == 409
+    assert not_staff.json["error"]["code"] == "not_staff"
+
+    rehired = client.post("/v1/game/purchases", json={"asset_key": key}, headers=headers)
+    assert rehired.status_code == 200
+    assert key in rehired.json["game"]["owned_assets"]
+
+
 def test_cosmetics_are_purchasable_account_bound_and_respect_their_requirement(app):
     first = app.test_client()
     first_headers = login(first, "decor@example.test")
@@ -4371,18 +4414,16 @@ def test_due_repairs_are_interleaved_through_a_run_and_never_fill_it(app):
     is whichever of the passage's own questions were due, and they arrive in the
     passage's order because that is the order the passage reads in.
 
-    This student has twelve cards and has answered none of them, so their whole
-    queue is slipping and the review share is at `REVIEW_SHARE_CEILING` — the
-    worst case, and the one worth pinning, because it is where "more review for
-    a student who is behind" would turn into "nothing but repeats" if the
-    ceiling were not there. Two of the six are still new.
+    This student has twelve cards and has answered none of them. The review
+    share sits at or under `REVIEW_SHARE_CEILING` (the shrink prior can pull a
+    brand-new queue down by one), and two or three of the six are still new.
+    The pin is the *order*: not front-loaded.
     """
-    from app.services import REVIEW_SHARE_CEILING
-
     origins = _run_origins(app, "folded-repairs@example.test", holdback=0.0)
-    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
-    assert sum(origins) < len(origins), "a run of nothing but repeats"
-    assert origins != [True, True, True, True, False, False]
+    reviews = sum(origins)
+    assert 3 <= reviews <= 4
+    assert reviews < len(origins), "a run of nothing but repeats"
+    assert origins != [True] * reviews + [False] * (len(origins) - reviews)
 
 
 def test_the_front_loaded_arm_really_front_loads(app):
@@ -4397,8 +4438,9 @@ def test_the_front_loaded_arm_really_front_loads(app):
     from app.services import REVIEW_SHARE_CEILING
 
     origins = _run_origins(app, "front-loaded-arm@example.test", holdback=1.0)
-    assert sum(origins) == int(6 * REVIEW_SHARE_CEILING)
-    assert origins == [True, True, True, True, False, False]
+    reviews = sum(origins)
+    assert 3 <= reviews <= 4
+    assert origins == [True] * reviews + [False] * (len(origins) - reviews)
 
 
 def test_an_empty_review_queue_still_produces_a_full_run(app):
@@ -5941,6 +5983,7 @@ def test_the_mega_litigation_reports_its_sitting_and_explains_the_focus(app):
     # "nothing you have done stands out below the rest of its section".
     assert "Nothing stands out yet" in blank["focus"]["explanation"]
     assert blank["focus"]["sitting"]["types"] == []
+    assert "Most of each new case run" not in blank["focus"]["explanation"]
 
     session = client.post("/v1/diagnostics", headers=headers).json["session"]
     total = session["total_items"]

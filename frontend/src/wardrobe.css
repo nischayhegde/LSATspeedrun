@@ -50,8 +50,9 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(4, 9, 13, .74);
-  backdrop-filter: blur(3px);
+  /* Solid, not a blur of the office WebGL canvas. A full-bleed
+     `backdrop-filter` resamples the 3D scene every frame. */
+  background: #0a1218;
 }
 
 .wardrobe {

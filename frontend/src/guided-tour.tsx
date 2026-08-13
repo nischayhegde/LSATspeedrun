@@ -355,16 +355,16 @@ const steps: TourStep[] = [
   {
     kind: 'feature',
     chapter: 'firm',
-    eyebrow: 'CONNECTIONS',
+    eyebrow: 'DISTRICTS',
     title: 'A network is not a perk. It is a key.',
-    body: 'A connection card in the same tab — the local bar association, the chamber of commerce, the board network — carries a small share of every case fee, but that is the least of what it does. What you are buying is the districts it unlocks, and the card names them and ticks the ones you have already signed.',
+    body: 'A network card in the same tab — the local bar association, the chamber of commerce, the board network — carries a small share of every case fee, but that is the least of what it does. What you are buying is the districts it unlocks, and the card names them and ticks the ones you have already signed.',
     route: '/firm?tab=connections',
     facts: [
       '"Show on the map" flies to the region and marks every district that connection opened',
       'Their crests hang on the office wall, and hovering one names the same districts in the same two colours',
       'Fourteen networks, and several districts are locked behind one specific network rather than behind money',
     ],
-    cue: 'Connections',
+    cue: 'Districts',
     hiddenInFocusMode: true,
   },
   {

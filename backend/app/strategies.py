@@ -333,12 +333,13 @@ def _weighted_pick(options: list[str], weights: list[float], fraction: float) ->
 #   two headings, because "passage a" occurs in ordinary prose ("in this passage
 #   a reader will find") and a lone capitalised mention is not a set.
 # * The heading ends in a negative lookahead for a lowercase letter rather than
-#   a word boundary. Six of the thirty-two sets in the bank stored the heading
-#   with the following space eaten — "Passage AUntil recently, conservationists"
-#   — and `\b` cannot match between "A" and "U". The lookahead still rejects
-#   "Passage About" and "Passage Analysis", so what it admits is a capital
-#   letter directly after the heading letter, which in English is a heading that
-#   ran into its own first sentence and essentially nothing else.
+#   a word boundary. The snapshot is patched so the heading has its space, but
+#   already-seeded databases may still store the eaten form — "Passage AUntil
+#   recently, conservationists" — and `\b` cannot match between "A" and "U".
+#   The lookahead still rejects "Passage About" and "Passage Analysis", so what
+#   it admits is a capital letter directly after the heading letter, which in
+#   English is a heading that ran into its own first sentence and essentially
+#   nothing else.
 #
 # Read the six back and the detection reproduces the format's actual history
 # exactly: every one of the thirty US forms in the bank dated June 2007 or later

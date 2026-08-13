@@ -349,22 +349,34 @@ LAYERS: dict[str, Layer] = {
             arms={"personalised": 0.75, "fixed": 0.25},
             off_arm="fixed",
             design_version="2026-08-12",
-            status="seam",
+            status="live",
+            # Not immediate: a personalised run serves more of the weaker
+            # section and more overdue review, so it is a harder sitting while
+            # it is happening. Reading it on this run's own answers would
+            # report a working treatment as a harm. The claim is about the
+            # diet, so the outcome is those questions coming back.
+            outcome_window="delayed",
         ),
         Layer(
             key="difficulty_targeting",
             unit=UNIT_RUN,
             question="Does aiming a run's questions at a difficulty derived from the "
             "student's own accuracy beat drawing difficulty as it falls?",
-            signal="A per-question difficulty estimate. Owned by the difficulty work; "
-            "this layer consumes it and does not produce it.",
-            without_signal="Every question in the bank is difficulty 3 today, so the "
-            "signal is absent for the whole bank and the layer must stay off until it "
-            "is not. A layer with a constant signal is not adaptive, it is a constant.",
+            signal="A per-question difficulty: `Question.published_difficulty` when the "
+            "test maker stated one, otherwise the Elo rating on `question_calibrations` "
+            "(any row with at least one response). Targeted slots aim near the "
+            "student's `LearnerRating` for that section. Empty published difficulty "
+            "is the expected state of this bank and is not a crash.",
+            without_signal="A pool with no published rating and no calibration row, "
+            "and a student with no ability estimate, is drawn uniformly — the same "
+            "behaviour as the off arm. Those runs still enroll; the comparison is "
+            "targeting versus uniform, and targeting degrades to uniform without a "
+            "signal rather than staying off for the whole bank.",
             arms={"targeted": 0.75, "uniform": 0.25},
             off_arm="uniform",
-            design_version="2026-08-12",
-            status="planned",
+            design_version="2026-08-13",
+            status="live",
+            outcome_window="delayed",
         ),
         Layer(
             key="review_scheduling",
@@ -773,6 +785,31 @@ def assign(
         )
     )
     return Assignment(spec.key, arm, propensity, exposure.token, randomised=True)
+
+
+# Live run-unit layers that every unfiltered practice sitting draws, including
+# a cold account where targeting degrades to uniform. Weak-type targeting and
+# run_ordering have eligibility gates and stay at their call sites.
+UNFILTERED_RUN_LAYERS = ("difficulty_targeting", "run_sequencing")
+
+
+def enroll_unfiltered_run(user_id: str, session_id: str) -> dict[str, Assignment]:
+    """Record the layers that every unfiltered practice sitting draws.
+
+    `create_study_session` is the live path. The demo history writer builds
+    sessions by hand, and a lived-in account seeded that way has no assignment
+    rows even while the layers are live. Callers that skip the live path still
+    have to enroll, with the same `assign` and the same exposure, or the next
+    sitting looks like the first and the comparison has nothing to join.
+
+    Type-filtered drills do not call this. They skip the layers on purpose:
+    the student has overridden the shape by hand.
+    """
+    exposure = Exposure.run(session_id)
+    return {
+        key: assign(key, user_id, exposure=exposure, session_id=session_id)
+        for key in UNFILTERED_RUN_LAYERS
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 
 import { api, ApiError } from './api'
+import { isDeckFrameRequest } from './demo/deck-frame'
 import { AppShell, ErrorNotice, LoadingScreen } from './components'
 import { AUTOPLAY_ENGAGED } from './demo/use-autoplay'
 import { FocusMark } from './art-2d/marks'
@@ -149,25 +150,29 @@ function ScrollReset() {
 
 function Protected({ children, gameRequired = true }: { children: React.ReactNode; gameRequired?: boolean }) {
   const location = useLocation()
+  const queryClient = useQueryClient()
+  const deckFrame = isDeckFrameRequest(location.search)
   const me = useQuery({ queryKey: ['me'], queryFn: api.me })
   const game = useQuery({ queryKey: ['game'], queryFn: api.game, enabled: Boolean(me.data?.user) })
-  if (me.isLoading || (me.data && game.isLoading)) return <LoadingScreen />
+  const recovering = useRef(false)
+  useEffect(() => {
+    if (!deckFrame || !isAuthenticationError(me.error) || recovering.current) return
+    recovering.current = true
+    void api.devLogin().then((data) => {
+      queryClient.setQueryData(['me'], data)
+      return me.refetch()
+    }).finally(() => { recovering.current = false })
+  }, [deckFrame, me.error, me, queryClient])
+  if (me.isLoading || (me.data && game.isLoading) || (deckFrame && isAuthenticationError(me.error))) return <LoadingScreen />
   const loadError = me.error || game.error
-  if (isAuthenticationError(loadError)) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (isAuthenticationError(loadError)) {
+    if (deckFrame) return <LoadingScreen />
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
+  }
   /*
    * A driven run does not replace the product with an error card.
-   *
-   * These queries are refetched constantly during a run — the firm's cash is
-   * re-read after every settled case — so a backend that goes away mid-demo
-   * takes the whole screen down and puts "The firm could not be opened" on the
-   * projector, over a question the audience was reading a second earlier.
-   * Whenever the account and firm have already loaded once, the last good
-   * screen is kept instead, and the driver quietly stops issuing actions. The
-   * room sees a case sitting on screen, which is a state a student produces
-   * every time they walk away from one.
-   *
    * Reached only from a URL that asked for a run; every other visitor still
-   * gets told the connection dropped, which is what they need to hear.
+   * gets told the connection dropped.
    */
   const holdLastGoodScreen = AUTOPLAY_ENGAGED && Boolean(me.data?.user) && Boolean(game.data?.game)
   if (loadError && !holdLastGoodScreen) {
@@ -241,6 +246,7 @@ function FocusModeGate({ children }: { children: React.ReactNode }) {
     onSuccess: (data) => queryClient.setQueryData(['me'], data),
   })
   const route = FOCUS_MODE_HIDDEN_ROUTES[location.pathname.replace(/\/$/, '')]
+  if (isDeckFrameRequest(location.search)) return <>{children}</>
   if (!route || me.data?.user.assistance_level !== 'focus') return <>{children}</>
   return (
     <div className="focus-gate" role="status">

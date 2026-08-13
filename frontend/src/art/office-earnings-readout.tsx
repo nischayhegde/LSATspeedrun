@@ -7,8 +7,6 @@ import { useLiveAccrual } from '../motion'
 import { storeGame } from '../pages/shared'
 import { useSound } from '../sound'
 import {
-  caseworkValue,
-  formatHours,
   passiveAccrual,
   type OfficeItemEconomics,
   type PassiveSnapshot,
@@ -18,39 +16,13 @@ import './office-earnings.css'
 /**
  * The per-item earnings readout for the 3D office.
  *
- * Three shapes, because the economy has three kinds of item and only one of them
- * earns by the hour. See `office-earnings.ts` for why that matters more than the
- * uniform ticking counter the Adventure Capitalist comparison implies.
+ * Hover is a chip: the dollar this item is putting in the safe, and a one-word
+ * source. Tap pins a slightly wider card with the item name and, when the safe
+ * is full, Collect. See `office-earnings.ts` for why the three modes exist.
  *
- * The card is positioned inside the room, so it inherits `.av-room`'s clipping
- * and travels with the scene rather than floating over the whole page.
- *
- * Every card leads with whether the item is earning *right now*, because that is
- * the question a player hovering an object is actually asking and it is not
- * answerable from a rate alone: a passive earner stops the moment the safe hits
- * its ceiling, a casework item has never earned anything by itself, and decor
- * never will. The status is stated in words on every card rather than implied by
- * whether a number happens to be moving.
- *
- * The ticking comes from the shared `useLiveAccrual`, the same hook the economy
- * ledger uses, so there is exactly one thing in the app that turns a confirmed
- * rate and a settlement timestamp into a live figure. This card asks it for
- * cents on a shorter tick (see `AccrualWatch`); nothing else about it differs.
- *
- * Money is formatted with the shared `formatMoney`. The shared `useRollup` and
- * `useDelta` from `motion.ts` are deliberately *not* used here, which is worth
- * stating because both look applicable:
- *
- *  - The passive figure is a live reading of a real accrual, recomputed from the
- *    server's collection timestamp. `useRollup` eases toward a target over
- *    420ms, so pointing it at a value that moves every 120ms would leave the
- *    displayed number permanently trailing the true one. The figure has to be
- *    the truth, not an approach to it.
- *  - The casework figure is static. Rolling it up from zero would look exactly
- *    like accumulation, which is the one thing a case multiplier does not do.
- *  - A delta badge would answer "why did this move", and per-item cash movement
- *    is not something the game state can attribute. The card only ever describes
- *    what one item contributes; it never claims to explain a change in cash.
+ * The card sits inside `.av-room`, so it clips with the scene. The live figure
+ * comes from shared `useLiveAccrual` + `formatMoney`; `useRollup` is not used
+ * because a 120ms accrual would trail a 420ms ease forever.
  */
 
 export type OfficeReadoutTarget = {
@@ -128,8 +100,6 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
       lastCollectedAtMs: Date.parse(state.passive_income.last_collected_at),
     }
     : null
-  const baseFee = state?.active_client.base_fee ?? 0
-  const clientName = state?.active_client.name ?? 'this client'
 
   const reduced = useRef(
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -184,12 +154,12 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
       aria-live="off"
     >
       <div className="office-readout-card">
-        <header>
-          <strong>{item.name}</strong>
-          {target.pinned && (
+        {target.pinned && (
+          <header>
+            <strong>{item.name}</strong>
             <button type="button" className="office-readout-close" onClick={onDismiss} aria-label="Close earnings readout">×</button>
-          )}
-        </header>
+          </header>
+        )}
         {item.mode === 'passive' && passive
           ? (
             <PassiveBody
@@ -204,20 +174,19 @@ export function OfficeEarningsReadout({ target, onDismiss }: Props) {
             />
           )
           : item.mode === 'casework'
-            ? <CaseworkBody item={item} baseFee={baseFee} clientName={clientName} />
-            : <ViewBody item={item} />}
-        <DistrictsOpened item={item} />
+            ? <CaseworkBody item={item} />
+            : <ViewBody />}
+        {target.pinned && <DistrictsOpened item={item} />}
       </div>
     </div>
   )
 }
 
 /**
- * Whether the item is putting money in the safe at this moment, said plainly.
+ * The one-word source, with the same live/paused/pending/idle dot as before.
  *
- * The dot is the same shape on every card and only animates when something is
- * genuinely accumulating, so "is this earning" is answerable at a glance and
- * without reading the number underneath it.
+ * The dot still only pulses when something is actually accumulating. The word
+ * is the mode, not a sentence: Hourly, Full, Fees, View.
  */
 function LiveState({ state, children }: { state: 'live' | 'paused' | 'pending' | 'idle'; children: ReactNode }) {
   return (
@@ -269,98 +238,40 @@ function PassiveBody({
 
   return (
     <>
-      {/* The answer to "am I earning from this right now", above the number,
-          because the number alone cannot distinguish a full safe from a fast
-          one — both show a large figure and neither is moving much. */}
       {accrual.full
-        ? <LiveState state="paused">Paused &mdash; safe is full</LiveState>
-        : <LiveState state="live">Earning now, {formatMoney(item.hourly)} an hour</LiveState>}
+        ? <LiveState state="paused">Full</LiveState>
+        : <LiveState state="live">Hourly</LiveState>}
       <div
         className={`office-readout-figure${accrual.full ? ' is-full' : ''}`}
-        aria-label={`${formatMoney(accrual.stored)} earned by this item since your last collection`}
+        aria-label={`${formatMoney(accrual.stored)} from this item`}
       >
         <span aria-hidden="true">{formatMoney(whole)}</span>
         {withCents && <small aria-hidden="true">.{String(cents).padStart(2, '0')}</small>}
       </div>
-      <p className="office-readout-lede">in the safe from this item</p>
-      {/* How far through the safe's capacity this accrual is. The counter says
-          how much; this says how much room is left, which is the part that
-          decides whether it is still worth anything to leave it running. */}
-      <div
-        className={`office-readout-fill${accrual.full ? ' is-full' : ''}`}
-        style={{ ['--fill' as string]: `${Math.min(100, Math.round((accrual.storedHours / Math.max(passive.capHours, .0001)) * 100))}%` }}
-        aria-hidden="true"
-      />
-      <dl>
-        {/* The hourly rate is stated in the status line above rather than
-            repeated here; what this adds is the size of it relative to
-            everything else the player owns. */}
-        {/* Labelled rather than described, because "31% of passive income" as
-            a value wraps onto two lines on a phone and the label has room for
-            the words. */}
-        <div>
-          <dt>Share of passive</dt>
-          <dd>{accrual.share >= .005 ? `${Math.round(accrual.share * 100)}%` : '<1%'} of the firm</dd>
-        </div>
-        {item.payoutMult > 0 && (
-          <div>
-            <dt>Also</dt>
-            <dd>+{Math.round(item.payoutMult * 100)}% of every case fee</dd>
-          </div>
-        )}
-      </dl>
-      {/* The safe stops filling at its ceiling. A counter that just stopped
-          would look broken, so the readout says what happened and what to do
-          about it — and the ceiling itself moves with storage upgrades, so it
-          is read from the server rather than assumed to be eight hours. */}
-      {accrual.full
-        ? (
-          <>
-            <p className="office-readout-cap is-full">Safe full at {formatHours(passive.capHours)} — collect it to start earning again</p>
-            {pinned && (
-              <button
-                type="button"
-                className="office-readout-collect"
-                onClick={onCollect}
-                disabled={collecting}
-              >
-                {collecting ? 'Collecting…' : 'Collect'}
-              </button>
-            )}
-            {collectError && <p className="office-readout-collect-error">Couldn&rsquo;t collect — try again.</p>}
-          </>
-        )
-        : <p className="office-readout-cap">Safe full in {formatHours(accrual.hoursToFull)}</p>}
+      {accrual.full && pinned && (
+        <>
+          <button
+            type="button"
+            className="office-readout-collect"
+            onClick={onCollect}
+            disabled={collecting}
+          >
+            {collecting ? 'Collecting…' : 'Collect'}
+          </button>
+          {collectError && <p className="office-readout-collect-error">Couldn&rsquo;t collect — try again.</p>}
+        </>
+      )}
     </>
   )
 }
 
-function CaseworkBody({ item, baseFee, clientName }: { item: OfficeItemEconomics; baseFee: number; clientName: string }) {
-  const value = caseworkValue(item.payoutMult, baseFee)
+function CaseworkBody({ item }: { item: OfficeItemEconomics }) {
   return (
     <>
-      {/* Same question, answered honestly: this one is not earning right now
-          and will not until a case settles. */}
-      <LiveState state="pending">Not earning now &mdash; pays when you win</LiveState>
-      {/* No ticking figure here. This item is worth nothing until a case is won,
-          so an accumulating counter would be a straightforward lie. */}
+      <LiveState state="pending">Fees</LiveState>
       <div className="office-readout-figure is-static">
         <span>+{Math.round(item.payoutMult * 100)}%</span>
       </div>
-      <p className="office-readout-lede">of every case fee you earn</p>
-      <dl>
-        {baseFee > 0 && (
-          <div>
-            <dt>On this matter</dt>
-            <dd>about {formatMoney(value)} of {clientName}&rsquo;s {formatMoney(baseFee)} base fee</dd>
-          </div>
-        )}
-        <div>
-          <dt>Paid</dt>
-          <dd>when you win a case, not by the hour</dd>
-        </div>
-      </dl>
-      <p className="office-readout-cap">Answer questions to collect it</p>
     </>
   )
 }
@@ -368,27 +279,12 @@ function CaseworkBody({ item, baseFee, clientName }: { item: OfficeItemEconomics
 /**
  * What a connection opened, which is the thing its crest is on the wall for.
  *
- * A network carries a small fee share — the local bar association is +2% — so
- * it classified as `casework` and the card described it as two percent of a
- * case fee and nothing else. That is true and it is the least of what the
- * purchase did: the network is the only reason a district's institutions will
- * sign the firm as standing counsel, and the crest already carries a wooden tab
- * per district that lights when one is signed. This says in words what those
- * tabs say in enamel, so the wall can be read from a chair as well as from
- * across the room.
- *
- * Rendered under every mode rather than as a fourth one, because a network is
- * genuinely both things at once and the modes describe how an item pays.
+ * Only on the pinned card: hover is the dollar, not the district list.
  */
 function DistrictsOpened({ item }: { item: OfficeItemEconomics }) {
   if (!item.districts.length) return null
-  const held = item.districts.filter((district) => district.held).length
   return (
     <div className="office-readout-districts">
-      <p>
-        Opens {item.districts.length === 1 ? 'one district' : `${item.districts.length} districts`}
-        {held > 0 && <span> &middot; {held} signed</span>}
-      </p>
       <ul>
         {item.districts.map((district) => (
           <li key={district.name} className={district.held ? 'is-held' : ''}>{district.name}</li>
@@ -398,15 +294,13 @@ function DistrictsOpened({ item }: { item: OfficeItemEconomics }) {
   )
 }
 
-function ViewBody({ item }: { item: OfficeItemEconomics }) {
+function ViewBody() {
   return (
     <>
-      <LiveState state="idle">Earns nothing, now or later</LiveState>
-      {/* Decor earns nothing, and saying so plainly is the whole point of this
-          mode. The game's own catalog comment is the right voice for it: it
-          reads as a choice the player made, not as a feature that is missing. */}
-      <p className="office-readout-lede is-view">Bought for the view.</p>
-      <p className="office-readout-view-note">{item.benefit || 'Earns nothing, and never pretended to.'}</p>
+      <LiveState state="idle">View</LiveState>
+      <div className="office-readout-figure is-static">
+        <span>$0</span>
+      </div>
     </>
   )
 }

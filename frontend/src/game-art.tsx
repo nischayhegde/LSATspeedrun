@@ -291,7 +291,7 @@ export function StaffRoster({ staff, onSelect }: { staff: GameAsset[]; onSelect?
       <header>
         <span>YOUR PEOPLE</span>
         <h2>The firm floor</h2>
-        <p>Hired staff work in the foreground; available candidates step forward when their requirements are met.</p>
+        <p>Candidates wait to be hired; people already on staff work in the foreground. A hire can be released from their card below.</p>
         {/* What the stage is worth acting on right now, and how. Both are things
             a player otherwise had to work out by reading every nameplate. */}
         <p className="firm-staff-roster-hint">
@@ -684,5 +684,4 @@ export function ExplorableOffice({
 
 export function EmpireWorldMap({ game, focusRival, focusConnection, focusDistrict, onManage, empireValueLabel, demo, finalDemo }: { game: GameState; focusRival?: string | null; focusConnection?: string | null; focusDistrict?: string | null; onManage: (tab: 'upgrades' | 'rivals' | 'connections', districtKey?: string) => void; empireValueLabel: string; demo?: boolean; finalDemo?: boolean }) {
   return <UnifiedEmpireMap game={game} focusRival={focusRival} focusConnection={focusConnection} focusDistrict={focusDistrict} onManage={onManage} empireValueLabel={empireValueLabel} demo={demo} finalDemo={finalDemo} />
-}
 }

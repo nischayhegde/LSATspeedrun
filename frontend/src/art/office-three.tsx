@@ -1049,11 +1049,8 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
         addMesh(rearCabinet, roundedBox(.72, .34, .035, 3, .018), rustic ? wood : darkWood, [-.82 + drawer * .82, .57, .31])
         addMesh(rearCabinet, constantGeometry('BoxGeometry:.2,.025,.02', () => new THREE.BoxGeometry(.2, .025, .02)), brass, [-.82 + drawer * .82, .57, .34])
       }
-      const sconce = new THREE.PointLight(rustic ? 0xffbd73 : 0xffdaa0, rustic ? .42 : .62, 4.1, 1.75)
-      sconce.position.set(cabinetX, 3.8, rearWallZ - .65)
-      root.add(sconce)
       addMesh(root, constantGeometry('CylinderGeometry:.18,.22,.07,18', () => new THREE.CylinderGeometry(.18, .22, .07, 18)), brass, [cabinetX, 3.78, rearWallZ - .22], [Math.PI / 2, 0, 0])
-      addMesh(root, constantGeometry('SphereGeometry:.16,18,12', () => new THREE.SphereGeometry(.16, 18, 12)), glow, [cabinetX, 3.78, rearWallZ - .35])
+      addMesh(root, constantGeometry('SphereGeometry:.16,18,12', () => new THREE.SphereGeometry(.16, 18, 12)), sharedStandard({ color: 0x7bc8bd, emissive: rustic ? 0xffbd73 : 0xffdaa0, emissiveIntensity: rustic ? 1.15 : 1.35, roughness: .28, metalness: .22 }), [cabinetX, 3.78, rearWallZ - .35])
 
       const rearFrame = new THREE.Group()
       rearFrame.position.set(side * 2.75, 3.28, rearWallZ - .1)
@@ -1223,6 +1220,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       verticalOffset: Math.abs(cameraPivot.y - windowY) + 1,
       // Chambers is a storey up, and the view is where that has to be true.
       storeyLift: practiceFloor ? 0 : 4.2,
+      lite: constrainedDevice,
     })
     // The district beyond the glass keeps its own clock — a train on the
     // viaduct, a barge on the canal — so none of it can be captured into a
@@ -1230,14 +1228,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     windowView.root.userData.batchSkip = true
     if (devQuery?.get('officeWindowView') !== '0') windowGroup.add(windowView.root)
 
+    const glassTint = new THREE.Color(rustic ? 0x6a5e4e : 0x7a9aaa).lerp(new THREE.Color(windowView.skyTop), rustic ? .22 : .4)
     const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({
-      color: rustic ? 0x6a5e4e : windowView.daylight,
+      color: glassTint,
       transparent: true,
-      opacity: rustic ? .12 : .05,
-      roughness: rustic ? .28 : .08,
-      metalness: .02,
+      opacity: rustic ? .16 : .08,
+      roughness: rustic ? .26 : .1,
+      metalness: rustic ? .06 : .12,
+      envMap: windowView.envMap ?? undefined,
+      envMapIntensity: windowView.envMap ? (rustic ? .32 : .48) : 0,
       emissive: windowView.daylight,
-      emissiveIntensity: windowView.night ? .08 : .035,
+      emissiveIntensity: windowView.night ? .06 : (rustic ? .05 : .08),
       // The pane must not own the depth at these pixels. The contour pass finds
       // its lines in the depth buffer, so a sheet of glass writing depth across
       // the whole opening would flatten everything behind it into one plane and
@@ -1256,23 +1257,25 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // The wall is a plane, so the opening has no thickness unless we give it
     // one. A reveal that catches the view's own daylight is what stops the
     // glass reading as a sticker on the plaster, and it is the contact lighting
-    // the floor in front of the window is supposed to agree with.
+    // the floor in front of the window is supposed to agree with. Emissive,
+    // not a light: the performance pass already spent the room's point budget.
     const reveal = new THREE.MeshStandardMaterial({
       color: rustic ? 0x5a4332 : 0xd8cbb4,
       roughness: rustic ? .92 : .62,
       metalness: 0,
       emissive: windowView.daylight,
-      emissiveIntensity: windowView.night ? .05 : (rustic ? .08 : .1),
+      emissiveIntensity: windowView.night ? .04 : (rustic ? .1 : .14),
     })
-    const revealDepth = .36
-    addMesh(windowGroup, new THREE.BoxGeometry(.1, windowHeight, revealDepth), reveal, [-windowWidth / 2 + .04, 0, revealDepth / 2 - .08])
-    addMesh(windowGroup, new THREE.BoxGeometry(.1, windowHeight, revealDepth), reveal, [windowWidth / 2 - .04, 0, revealDepth / 2 - .08])
-    addMesh(windowGroup, new THREE.BoxGeometry(windowWidth, .1, revealDepth), reveal, [0, windowHeight / 2 - .04, revealDepth / 2 - .08])
+    const revealDepth = .32
+    addMesh(windowGroup, new THREE.BoxGeometry(.08, windowHeight, revealDepth), reveal, [-windowWidth / 2 + .03, 0, revealDepth / 2 - .06])
+    addMesh(windowGroup, new THREE.BoxGeometry(.08, windowHeight, revealDepth), reveal, [windowWidth / 2 - .03, 0, revealDepth / 2 - .06])
+    addMesh(windowGroup, new THREE.BoxGeometry(windowWidth, .08, revealDepth), reveal, [0, -windowHeight / 2 + .03, revealDepth / 2 - .06])
+    addMesh(windowGroup, new THREE.BoxGeometry(windowWidth, .08, revealDepth), reveal, [0, windowHeight / 2 - .03, revealDepth / 2 - .06])
     const sill = addMesh(windowGroup, new THREE.BoxGeometry(windowWidth + .16, .14, revealDepth + .12), reveal, [0, -windowHeight / 2 + .02, revealDepth / 2])
     sill.castShadow = false
 
-    const rainCount = 90
-    const rainPositions = new Float32Array(rainCount * 6)
+    const rainCount = constrainedDevice ? 0 : 90
+    const rainPositions = rainCount ? new Float32Array(rainCount * 6) : new Float32Array(0)
     for (let index = 0; index < rainCount; index += 1) {
       const x = -windowWidth / 2 + .08 + seeded(index * 2) * (windowWidth - .16)
       const y = -windowHeight / 2 + .08 + seeded(index * 2 + 1) * (windowHeight - .16)
@@ -1280,12 +1283,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       rainPositions[index * 6 + 3] = x - .055; rainPositions[index * 6 + 4] = y - (rustic ? .15 : .2); rainPositions[index * 6 + 5] = .24
     }
     const rainGeometry = new THREE.BufferGeometry()
-    rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3))
+    if (rainCount) rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3))
     // Rain belongs to the storm mood only. Against the daylit exterior view the
     // permanent streaks read as scratches on the glass rather than weather.
-    const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({ color: 0xa5d1dc, transparent: true, opacity: .42 }))
-    rain.visible = false
-    windowGroup.add(rain)
+    // Constrained devices skip the streaks the same way they skip dust.
+    const rain = rainCount
+      ? new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({ color: 0xa5d1dc, transparent: true, opacity: .42 }))
+      : null
+    if (rain) {
+      rain.visible = false
+      windowGroup.add(rain)
+    }
 
     // Storage grows from a hand-built shelf into a full legal library.
     const books: THREE.Mesh[] = []
@@ -1397,10 +1405,11 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     //
     // The downstairs offset is a hair left of centre for the reception pod's
     // benefit: the pod is held off the middle of the room by `minAbs` so it
-    // clears the desk lamp, and at the bottom of the tier ladder the corner of
-    // the desk was still in the inner receptionist's shoulder.
-    desk.position.set(rustic ? .92 : practiceFloor ? .88 : 4.6, 0, rustic ? -.98 : practiceFloor ? -1.34 : -2.85)
-    desk.scale.setScalar(rustic ? .86 : .76)
+    // clears the desk lamp, and at founding spread (0.52) the desk still
+    // reached the inner receptionist's shoulder. Shifted and slightly smaller
+    // until the two footprints miss at that spread.
+    desk.position.set(rustic ? .92 : practiceFloor ? .12 : 4.6, 0, rustic ? -.98 : practiceFloor ? -1.78 : -2.85)
+    desk.scale.setScalar(rustic ? .86 : practiceFloor ? .66 : .76)
     root.add(desk)
     if (rustic) {
       for (let plank = 0; plank < 5; plank += 1) addMesh(desk, new THREE.BoxGeometry(5.45, .16 + seeded(plank + 120) * .04, .35), wood, [(seeded(plank + 80) - .5) * .06, 1.25 + (plank % 2) * .018, -.7 + plank * .35], [0, (seeded(plank + 30) - .5) * .025, (seeded(plank + 15) - .5) * .012])
@@ -1480,8 +1489,17 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     } else {
       addMesh(lampGroup, constantGeometry('CylinderGeometry:.35,.42,.08,28', () => new THREE.CylinderGeometry(.35, .42, .08, 28)), brass, [0, 0, 0])
       addMesh(lampGroup, constantGeometry('CylinderGeometry:.04,.04,1.2,18', () => new THREE.CylinderGeometry(.04, .04, 1.2, 18)), brass, [0, .58, 0], [0, 0, -.16])
-      addMesh(lampGroup, new THREE.ConeGeometry(.48, .52, 28, 1, true), new THREE.MeshStandardMaterial({ color: 0x18252f, roughness: .35, metalness: .62, side: THREE.DoubleSide }), [-.1, 1.23, 0], [0, 0, Math.PI])
+      addMesh(lampGroup, new THREE.ConeGeometry(.48, .52, 28, 1, true), new THREE.MeshStandardMaterial({
+        color: 0x18252f,
+        roughness: .35,
+        metalness: .62,
+        side: THREE.DoubleSide,
+        emissive: 0xffc878,
+        emissiveIntensity: .55,
+      }), [-.1, 1.23, 0], [0, 0, Math.PI])
     }
+    // The only desk PointLight. Staff benches use the band lights; collectible
+    // lamps are emissive meshes. Each extra point light is ~1.5ms here.
     const deskLight = new THREE.PointLight(rustic ? 0xffad55 : 0xffc871, rustic ? 2.05 : 2.5, rustic ? 4.6 : 5.8, 1.45)
     deskLight.position.set(rustic ? 0 : -.1, rustic ? .42 : 1.02, .08)
     deskLight.castShadow = false
@@ -2317,10 +2335,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           addMesh(prop, constantGeometry('BoxGeometry:.44,.012,.16', () => new THREE.BoxGeometry(.44, .012, .16)), brass, [0, .33, 0])
           const filament = addMesh(prop, constantGeometry('SphereGeometry:.045,12,8', () => new THREE.SphereGeometry(.045, 12, 8)), glow, [0, .31, 0])
           filament.castShadow = false
-          const lampLight = new THREE.PointLight(0xffc878, .55, 2.1, 1.9)
-          lampLight.position.set(0, .26, .06)
-          lampLight.castShadow = false
-          prop.add(lampLight)
         },
         persian_rug: (asset) => {
           // The entry strip in front of the door, kept clear of the room's own
@@ -2432,10 +2446,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
           for (const x of [-.34, .34]) addMesh(prop, constantGeometry('CylinderGeometry:.02,.02,.18,10', () => new THREE.CylinderGeometry(.02, .02, .18, 10)), brass, [x, 1.97, .1])
           const shelfGlow = addMesh(prop, constantGeometry('BoxGeometry:.94,.03,.06', () => new THREE.BoxGeometry(.94, .03, .06)), glow, [0, 2.0, .17])
           shelfGlow.castShadow = false
-          const shelfLight = new THREE.PointLight(0xffd39a, .7, 2.8, 1.9)
-          shelfLight.position.set(0, 1.86, .42)
-          shelfLight.castShadow = false
-          prop.add(shelfLight)
         },
         grandfather_clock: (asset) => {
           const prop = decorProp(asset, root, [-.22, 0, -3.34], 0, .55, false)
@@ -2645,10 +2655,6 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
             const rail = addMesh(prop, constantGeometry('BoxGeometry:2.12,.03,.03', () => new THREE.BoxGeometry(2.12, .03, .03)), glow, [0, y, .2])
             rail.castShadow = false
           }
-          const growLight = new THREE.PointLight(0xbfe3c4, .3, 2.6, 2)
-          growLight.position.set(0, .4, .5)
-          growLight.castShadow = false
-          prop.add(growLight)
         },
       }
       decorAssets.forEach((asset) => decorBuilders[asset.key]?.(asset))
@@ -3196,21 +3202,20 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       staffRigs.filter((entry) => entry.home.z <= -1.9),
       staffRigs.filter((entry) => entry.home.z > -1.9),
     ]
+    // Overhead pools used to be PointLights, one per band. Every extra point
+    // light is ~1.5ms here; the ceiling rect already covers the floor, and
+    // the desk keeps the one remaining PointLight. Emissive bench strips stand
+    // in for the pools so the room still reads as lit at the seats.
     litBands.forEach((band) => {
       if (!band.length) return
-      // Tier zero is a timber shack lit by a hearth and a lantern, and it was
-      // dark enough that its single hire was not merely unflattered but
-      // genuinely not visible in the opening frame. Raised to the point where
-      // a body at a desk reads, and no further: the gloom is the tier's whole
-      // character and the reward for climbing out of it.
-      const light = new THREE.PointLight(0xffdaa0, rustic ? .58 : .54, 12.5, 1.4)
-      light.position.set(
-        band.reduce((sum, entry) => sum + entry.home.x, 0) / band.length,
-        3.1,
-        band.reduce((sum, entry) => sum + entry.home.z, 0) / band.length,
-      )
-      light.castShadow = false
-      root.add(light)
+      const x = band.reduce((sum, entry) => sum + entry.home.x, 0) / band.length
+      const z = band.reduce((sum, entry) => sum + entry.home.z, 0) / band.length
+      addMesh(root, constantGeometry('BoxGeometry:2.4,.04,.18', () => new THREE.BoxGeometry(2.4, .04, .18)), sharedStandard({
+        color: rustic ? 0xffd29b : 0xffdfb5,
+        emissive: rustic ? 0xffad55 : 0xffc871,
+        emissiveIntensity: rustic ? .55 : .72,
+        roughness: .35,
+      }), [x, 3.18, z])
     })
 
     // Open on the room the player actually has.
@@ -3318,28 +3323,32 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
      * available for spill and glass (production office-window).
      */
     const daylight = new THREE.Color(windowView.daylight)
+    const sunColor = new THREE.Color(windowView.sunColor)
     const sunward = Math.sign(windowView.sunDirection.x) || 1
     const skylight = new THREE.Color(rustic ? 0x9fb6b5 : 0xc2d6d7)
-      .lerp(new THREE.Color(windowView.skyTop), rustic ? .12 : .22)
-      .lerp(daylight, rustic ? .3 : .45)
-    scene.add(new THREE.HemisphereLight(skylight, rustic ? 0x2c1d14 : 0x32271e, rustic ? 1.05 : 1.58))
+      .lerp(new THREE.Color(windowView.skyTop), rustic ? .35 : .55)
+      .lerp(sunColor, rustic ? .08 : .12)
+    const groundBounce = new THREE.Color(rustic ? 0x2c1d14 : 0x32271e).lerp(daylight, rustic ? .08 : .12)
+    scene.add(new THREE.HemisphereLight(skylight, groundBounce, rustic ? 1.08 : 1.62))
     scene.add(new THREE.AmbientLight(rustic ? 0x8d765e : 0x8ca3aa, rustic ? .34 : .42))
     const keyLight = new THREE.DirectionalLight(
-      new THREE.Color(rustic ? 0xe7bd89 : 0xffe1b2).lerp(daylight, .35),
-      rustic ? .46 : .72,
+      new THREE.Color(rustic ? 0xe7bd89 : 0xffe1b2).lerp(sunColor, .55),
+      rustic ? .5 : .82,
     )
     keyLight.position.copy(windowView.sunDirection).multiplyScalar(9).setY(7.2)
     keyLight.castShadow = false
     scene.add(keyLight)
-    const ceilingFill = new THREE.RectAreaLight(rustic ? 0xffd29b : 0xffdfb5, rustic ? 2.4 : 3.6, roomWidth * .52, 4.4)
+    const ceilingFill = new THREE.RectAreaLight(rustic ? 0xffd29b : 0xffdfb5, rustic ? 2.4 : 4.2, roomWidth * .52, 4.4)
     ceilingFill.position.set(0, 6.1, .35)
     ceilingFill.rotation.x = -Math.PI / 2
     scene.add(ceilingFill)
-    const rearFill = new THREE.RectAreaLight(rustic ? 0xc99768 : 0x8fb9c0, rustic ? 1.2 : 2.1, roomWidth * .42, 2.8)
-    rearFill.position.set(0, 3.35, rearWallZ - .35)
-    rearFill.lookAt(0, 2.25, .3)
-    scene.add(rearFill)
-    for (const side of [-1, 1]) {
+    if (!constrainedDevice) {
+      const rearFill = new THREE.RectAreaLight(rustic ? 0xc99768 : 0x8fb9c0, rustic ? 1.2 : 2.1, roomWidth * .42, 2.8)
+      rearFill.position.set(0, 3.35, rearWallZ - .35)
+      rearFill.lookAt(0, 2.25, .3)
+      scene.add(rearFill)
+    }
+    if (!constrainedDevice) for (const side of [-1, 1]) {
       // The wall the sun is on returns warm light; the wall opposite it is in
       // its own shade and returns the cool of the sky. This was a fixed
       // cool-left, warm-right split, which was right half the time by
@@ -3352,21 +3361,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       sideFill.lookAt(0, 2.15, .55)
       scene.add(sideFill)
     }
-    // The daylight the window throws into the room is the view's own light. A
-    // cool northern spill under The Circuit's afternoon, or a warm one under
-    // the Treaty Sea's overcast, is the kind of disagreement nobody names and
-    // everybody sees.
-    const windowSpillBase = rustic ? .82 : 1.42
-    const windowSpill = windowSpillBase * windowView.daylightStrength
+    // Hoisted in this scope so the RAF loop never TDZ-crashes the office.
+    let windowLight: THREE.SpotLight | null = null
+    const windowSpill = (rustic ? .82 : 1.42) * windowView.daylightStrength
     const windowOrigin = new THREE.Vector3(windowX, windowY, -3.94)
-    const windowLight = new THREE.SpotLight(windowView.daylight, windowSpill, 16, .7, .78, 1.15)
-    windowLight.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, 1.6)
-    windowLight.target.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, -7.5)
-    windowLight.target.position.y = Math.max(.15, windowLight.target.position.y)
+    windowLight = new THREE.SpotLight(windowView.daylight, windowSpill, 16, .72, .8, 1.2)
+    windowLight.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, 1.4)
+    windowLight.target.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, -6)
+    windowLight.target.position.y = Math.max(.2, windowLight.target.position.y)
     scene.add(windowLight, windowLight.target)
-    // The pane as a sky source, not a lamp. A spot on the floor is the sun
-    // patch; this is the hemisphere that arrives through the glass and wraps
-    // the sill, the near floorboards, and the window-side of the desks.
     const windowPane = new THREE.RectAreaLight(
       windowView.daylight,
       (rustic ? 1.6 : 2.8) * windowView.daylightStrength * (windowView.night ? .55 : 1),
@@ -3377,12 +3380,15 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     windowPane.lookAt(windowX * .35, 1.55, 1.6)
     scene.add(windowPane)
 
-    const dustCount = 105
-    const dustPositions = new Float32Array(dustCount * 3)
-    for (let index = 0; index < dustCount; index += 1) { dustPositions[index * 3] = -roomHalf + .8 + seeded(index) * (roomWidth - 1.6); dustPositions[index * 3 + 1] = .25 + seeded(index + 31) * 5.8; dustPositions[index * 3 + 2] = -3.4 + seeded(index + 61) * 7.5 }
-    const dustGeometry = new THREE.BufferGeometry(); dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
-    const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0xe8d4a5, size: .025, transparent: true, opacity: .22, depthWrite: false }))
-    root.add(dust)
+    const dustCount = constrainedDevice ? 0 : 40
+    let dust: THREE.Points | null = null
+    if (dustCount > 0) {
+      const dustPositions = new Float32Array(dustCount * 3)
+      for (let index = 0; index < dustCount; index += 1) { dustPositions[index * 3] = -roomHalf + .8 + seeded(index) * (roomWidth - 1.6); dustPositions[index * 3 + 1] = .25 + seeded(index + 31) * 5.8; dustPositions[index * 3 + 2] = -3.4 + seeded(index + 61) * 7.5 }
+      const dustGeometry = new THREE.BufferGeometry(); dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
+      dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({ color: 0xe8d4a5, size: .025, transparent: true, opacity: .22, depthWrite: false }))
+      root.add(dust)
+    }
 
     /**
      * Where the movable furniture is allowed to come to rest.
@@ -4751,7 +4757,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       const cozy = office?.classList.contains('is-cozy') ?? false
       const awake = office?.classList.contains('cat-awake') ?? false
       deskLight.intensity = THREE.MathUtils.damp(deskLight.intensity, focus ? (rustic ? 3.15 : 3.7) : (rustic ? 1.72 : 2.05), 5, delta)
-      windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? windowSpill * 1.9 : windowSpill, 3.7, delta)
+      if (windowLight) windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? windowSpill * 1.9 : windowSpill, 3.7, delta)
       windowPane.intensity = THREE.MathUtils.damp(
         windowPane.intensity,
         (rustic ? 1.6 : 2.8) * windowView.daylightStrength * (storm ? 1.55 : windowView.night ? .55 : 1),
@@ -4834,36 +4840,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // A train on the viaduct, a barge on the canal, a launch crossing the
       // harbour: a handful of matrix writes, and the only thing that stops the
       // district reading as a photograph of itself.
-      windowView.update(elapsed)
+      if (camera.position.z > -1.2) windowView.update(elapsed)
       if (!reduced) {
         timed('humanoid', () => staffDirector.update(delta))
-        // Cap the number of characters paying full price per frame. Actors
-        // beyond the budget, and anything far from the camera, drop to a
-        // reduced update rate and skip the foot solver.
-        // The budgets are counts, not fractions, so they already hold the line
-        // as the cast grows: a thirty-person floor pays full price for the
-        // same four bodies a five-person one did, gives the next eight the
-        // clip playback and joint clamping that is nearly all of the look, and
-        // runs the remaining eighteen at eighteen hertz with no world-space
-        // post-pass. Those eighteen are the window wall, where a body is a
-        // third of the height of one in the foreground.
-        timed('humanoid', () => assignHumanoidLod(staffHumanoids, camera, { fullBudget: 4, mediumBudget: 8 }))
+        timed('humanoid', () => assignHumanoidLod(staffHumanoids, camera, {
+          fullBudget: constrainedDevice ? 1 : 2,
+          mediumBudget: constrainedDevice ? 2 : 4,
+          farDistance: constrainedDevice ? 3.8 : 5.5,
+        }))
       }
       staffRigs.forEach((entry) => {
-        const { rig, humanoid, phase } = entry
-        // A seated actor is placed once, at build time, and never moves again.
-        // Its position and facing are properties of its bay, not of this
-        // frame, so all that happens here is the clip and the blink.
-        //
-        // What used to be here: an errand state machine with six phases, a
-        // path query and a steering pass per body, reciprocal separation,
-        // yielding, stall detection and re-planning, an anchor reservation
-        // table, and the measured-speed, heading-delta, lean and banking terms
-        // that only meant anything to a body in motion. All of it went with
-        // the walking, and none of it is switched off - it is gone.
-        timed('humanoid', () => humanoid.update(delta))
-        // Blinking stays here: it is not a joint, so the skeleton has no
-        // opinion about it.
+        const { rig, humanoid, phase, home } = entry
+        if (!reduced) {
+          const distance = home.distanceTo(camera.position)
+          if (distance > (constrainedDevice ? 4.2 : 6.5)) humanoid.setLod('frozen')
+        }
+        const lod = humanoid.lod
+        if (reduced || lod !== 'frozen') timed('humanoid', () => humanoid.update(delta))
+        if (lod === 'frozen' || lod === 'low') return
         const blink = reduced || Math.sin(elapsed * .58 + phase * 2.1) <= .996 ? 1 : .14
         rig.eyes.forEach((eye) => { eye.scale.y = blink })
       })
@@ -4871,22 +4865,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // are the only thing the renderer sees of the cast, so a pose that has
       // not been copied into them has not happened.
       if (castBatch) timed('cast', () => castBatch.sync())
-      dust.rotation.y = elapsed * .009
+      if (dust) dust.rotation.y = elapsed * .009
 
-      rain.visible = storm
-      if (storm) {
-        const rainAttribute = rainGeometry.getAttribute('position') as THREE.BufferAttribute
-        const rainArray = rainAttribute.array as Float32Array
-        for (let index = 0; index < rainCount; index += 1) {
-          const base = index * 6
-          rainArray[base + 1] -= .038 * delta * 60
-          rainArray[base + 4] -= .038 * delta * 60
-          if (rainArray[base + 4] < -windowHeight / 2 - .1) {
-            rainArray[base + 1] = windowHeight / 2 + .08
-            rainArray[base + 4] = windowHeight / 2 - (rustic ? .07 : .12)
+      if (rain) {
+        rain.visible = storm
+        if (storm) {
+          const rainAttribute = rainGeometry.getAttribute('position') as THREE.BufferAttribute
+          const rainArray = rainAttribute.array as Float32Array
+          for (let index = 0; index < rainCount; index += 1) {
+            const base = index * 6
+            rainArray[base + 1] -= .038 * delta * 60
+            rainArray[base + 4] -= .038 * delta * 60
+            if (rainArray[base + 4] < -windowHeight / 2 - .1) {
+              rainArray[base + 1] = windowHeight / 2 + .08
+              rainArray[base + 4] = windowHeight / 2 - (rustic ? .07 : .12)
+            }
           }
+          rainAttribute.needsUpdate = true
         }
-        rainAttribute.needsUpdate = true
       }
 
       const steamAttribute = steamGeometry.getAttribute('position') as THREE.BufferAttribute
@@ -4974,6 +4970,7 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       // in the build stopwatch, so it is timed too. Read by `switch.mjs`.
       const teardownStarted = performance.now()
       disposed = true
+      windowView.dispose()
       // Mixers hold a cache keyed on the root object, so an actor that is not
       // uncached keeps its clips and bindings alive after the scene is gone.
       staffHumanoids.forEach((humanoid) => humanoid.dispose())

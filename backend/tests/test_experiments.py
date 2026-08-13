@@ -366,12 +366,12 @@ def test_the_run_records_its_arm_and_the_off_arm_really_stops_the_steering(app, 
         on_users, on_types = _runs_with_focus(app, monkeypatch, holdback=0.0, runs=4)
         off_users, off_types = _runs_with_focus(app, monkeypatch, holdback=1.0, runs=4)
 
-        on_row = LayerAssignment.query.filter_by(subject_id=on_users[0]).one()
+        on_row = LayerAssignment.query.filter_by(subject_id=on_users[0], layer=LAYER).one()
         assert on_row.arm == "targeted"
         assert on_row.exposure == on_row.session_id
         assert StudySession.query.filter_by(id=on_row.session_id).one().user_id == on_users[0]
 
-        off_row = LayerAssignment.query.filter_by(subject_id=off_users[0]).one()
+        off_row = LayerAssignment.query.filter_by(subject_id=off_users[0], layer=LAYER).one()
         assert off_row.arm == "untargeted"
 
         # A third of this bank is the focus type, and the targeted arm fills
@@ -398,7 +398,80 @@ def test_a_run_with_nothing_to_target_is_left_out_of_the_comparison(app, monkeyp
         db.session.commit()
 
         create_study_session(user, count=6)
-        assert LayerAssignment.query.filter_by(subject_id=user.id).count() == 0
+        assert LayerAssignment.query.filter_by(subject_id=user.id, layer=LAYER).count() == 0
+
+
+def test_a_hand_built_session_still_enrolls_difficulty_targeting(app):
+    """The demo history writer lays sessions down without create_study_session.
+
+    That used to leave the lived-in account with zero assignment rows while
+    the layer was live. The enrollment helper is the path seed_demo now takes.
+    """
+    from app.experiments import enroll_unfiltered_run
+
+    with app.app_context():
+        user = make_user("demo-like@example.test")
+        run = StudySession(
+            user_id=user.id,
+            mode="practice",
+            practice_style="cases",
+            feedback_policy="immediate",
+            target_minutes=20,
+            total_items=6,
+        )
+        db.session.add(run)
+        db.session.flush()
+        enrolled = enroll_unfiltered_run(user.id, run.id)
+        db.session.commit()
+        row = LayerAssignment.query.filter_by(
+            layer="difficulty_targeting", session_id=run.id
+        ).one()
+        assert row.subject_id == user.id
+        assert row.arm in {"targeted", "uniform"}
+        assert row.exposure == run.id
+        assert enrolled["run_sequencing"].arm in {"personalised", "fixed"}
+        assert LayerAssignment.query.filter_by(
+            layer="run_sequencing", session_id=run.id
+        ).one().arm == enrolled["run_sequencing"].arm
+
+
+def test_create_study_session_enrolls_difficulty_targeting_without_a_weak_type(app, monkeypatch):
+    """Difficulty targeting has no eligibility gate; an empty focus still enrolls."""
+    with app.app_context():
+        _stock_bank()
+        monkeypatch.setattr("app.services.rolling_focus", lambda _user_id: [])
+        user = make_user("difficulty-live@example.test")
+        db.session.add(
+            PlayerProfile(user_id=user.id, lawyer_name="A", firm_name="B", character_gender="male")
+        )
+        db.session.commit()
+        app.config["PRACTICE_RC_CASE_SHARE"] = 0.0
+        session = create_study_session(user, count=6)
+        assert LayerAssignment.query.filter_by(
+            subject_id=user.id, layer="weak_type_targeting"
+        ).count() == 0
+        row = LayerAssignment.query.filter_by(
+            layer="difficulty_targeting", session_id=session.id
+        ).one()
+        assert row.arm in {"targeted", "uniform"}
+        assert LayerAssignment.query.filter_by(
+            layer="run_sequencing", session_id=session.id
+        ).one() is not None
+
+
+def test_seed_demo_enrolls_the_layers_it_used_to_skip():
+    """A source pin: the history writer must call the same enroll helper.
+
+    The full seed takes minutes and needs the licensed bank, so what is pinned
+    here is the decision that used to be missing, not a replay of eleven weeks.
+    """
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "seed_demo.py").read_text(
+        encoding="utf-8"
+    )
+    assert "enroll_unfiltered_run" in source
+    assert "difficulty_targeting enrolled on" in source
 
 
 # ---------------------------------------------------------------------------
@@ -771,7 +844,7 @@ def test_the_draw_writes_down_the_signal_because_it_will_not_be_true_later(app, 
         db.session.commit()
         users, _served = _runs_with_focus(app, monkeypatch, holdback=0.0, runs=1)
 
-        row = LayerAssignment.query.filter_by(subject_id=users[0]).one()
+        row = LayerAssignment.query.filter_by(subject_id=users[0], layer=LAYER).one()
         # Section-qualified, because "Flaw" alone did not say which section's
         # Flaw and four type names exist in both. The whole point of the column
         # is that the signal is unrecoverable later, so a token that cannot be

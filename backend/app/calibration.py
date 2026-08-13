@@ -294,10 +294,10 @@ def _stable_fraction(value: str) -> float:
 def exposure_draw(user_id: str, session_id: str, position: int) -> dict:
     """Decide whether one slot in a run is difficulty-blind or difficulty-aware.
 
-    **Nothing in this repository calls this yet, and that is the current
-    scope boundary rather than an oversight.** Question selection does not read
-    difficulty; when it starts to, this is the draw that has to sit in front of
-    it, and `SessionItem.exposure_policy` is the column the answer belongs in.
+    Called from `services.select_random_questions` and
+    `services.select_reading_comprehension_case` on the `difficulty_targeting`
+    on-arm, once per slot before the question is chosen, and again when the
+    `SessionItem` is written so the stored policy is the same draw.
 
     The contract for a consumer, in full:
 
@@ -448,6 +448,29 @@ def status_for(responses: int, information: float | None) -> str:
 def band_for(centred_rating: float) -> int:
     """1 (easiest) to 5 (hardest), on a rating already centred on the bank."""
     return 1 + sum(1 for edge in BAND_EDGES if centred_rating > edge)
+
+
+# Midpoints of the five bands BAND_EDGES defines. A transcribed SuperPrep 1–5
+# can be compared with an Elo rating in the same (centred) units.
+PUBLISHED_BAND_MIDPOINTS = (-1.6, -0.8, 0.0, 0.8, 1.6)
+
+
+def published_logit(value) -> float | None:
+    """Centred logits for a 1–5 published rating, or None if there isn't one.
+
+    Empty `published_difficulty` is the expected state of this bank — all 6,886
+    rows are NULL — and must not raise. Out-of-range or unparseable values are
+    treated the same way: there is no published rating, not a crash.
+    """
+    if value is None:
+        return None
+    try:
+        band = int(value)
+    except (TypeError, ValueError):
+        return None
+    if band < 1 or band > 5:
+        return None
+    return PUBLISHED_BAND_MIDPOINTS[band - 1]
 
 
 # --- The database side ------------------------------------------------------

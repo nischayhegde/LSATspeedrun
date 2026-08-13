@@ -183,15 +183,16 @@ export function MarkupToolbar({ markup, seed }: { markup: CaseMarkup; seed: stri
       <span className="markup-toolbar-label" aria-hidden="true">MARKUP</span>
       <div className="markup-tools">
         {tools.map(({ key, label, hint, icon: Icon }) => (
-          <button
-            type="button"
-            key={key}
-            className={tool === key ? 'active' : ''}
-            aria-pressed={tool === key}
-            aria-label={hint}
-            title={hint}
-            onClick={() => pick(key)}
-          >
+        <button
+          type="button"
+          key={key}
+          className={tool === key ? 'active' : ''}
+          aria-pressed={tool === key}
+          aria-label={hint}
+          title={hint}
+          data-markup-tool={key}
+          onClick={() => pick(key)}
+        >
             <Icon size={15} />
             <em>{label}</em>
           </button>
@@ -313,7 +314,11 @@ export function MarkupLayer({ markup, surface }: { markup: CaseMarkup; surface: 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!armed || !event.isPrimary) return
     event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Scripted pointer events (the pitch-deck driver) cannot capture.
+    }
     drawingRef.current = true
     const [x, y] = pointFrom(event)
     if (tool === 'eraser') {

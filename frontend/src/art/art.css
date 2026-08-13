@@ -83,36 +83,6 @@
   --av-night: var(--night);
   --av-panel: var(--panel);
   --av-panel-line: var(--hairline);
-
-  /* ----------------------------------------------------------------
-     The `--pixel-*` names, repointed rather than renamed.
-
-     `styles.css` defines these for the Pixel Empire pass and 62 rules
-     across nine sheets still read them, most of them in surfaces that
-     are otherwise fine — the war room, the wardrobe, the rival capture
-     cutscene, the map HUD. Renaming those call sites is 62 edits in
-     files three other branches are working in; repointing the names is
-     one edit here, and every one of those surfaces moves onto the
-     illustrated palette at once.
-
-     Chosen so the shift is a correction rather than a redesign:
-     `#171923` and `#090d15` are cold near-blacks and become the warm
-     ink; `#f2c75b` is the thirteenth brass and becomes the one brass;
-     `#65c9c2` is one of ~99 mints and becomes the one mint. The paper,
-     green and red are left where they are — the first is already on the
-     parchment ramp, and the other two carry meaning (bought, blocked)
-     that a palette change should not quietly re-tune.
-
-     `--pixel-shadow` keeps an alpha because it is used as the colour of
-     hard offset shadows: flat ink at full strength is what made those
-     read as printed-on rather than cast. */
-  --pixel-ink: var(--ink);
-  --pixel-shadow: rgba(27, 26, 36, .8);
-  --pixel-night: var(--night);
-  --pixel-gold: var(--brass-bright);
-  --pixel-gold-dark: var(--brass-deep);
-  --pixel-cyan: var(--verdigris);
-  --pixel-border: 1px solid var(--ink-line-strong);
 }
 
 /* Tracking is set for all three heading levels in `styles.css`; it was
@@ -424,28 +394,29 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 /* Complete, mapped inventory. The compact toggle keeps the environment
    primary; the panel opens only when the player asks what is installed. */
 .office-inventory { width: min(370px, calc(100% - 32px)); height: calc(100% - 32px); position: absolute; z-index: 90; right: 16px; bottom: 16px; display: flex; flex-direction: column-reverse; align-items: flex-end; pointer-events: none; }
-.office-inventory-toggle { min-width: 178px; min-height: 42px; margin-left: auto; padding: 0 12px 0 14px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; pointer-events: auto; border: 1px solid rgba(223,195,125,.42); border-radius: 11px; color: #f5e8c8; background: rgba(8,17,27,.92); box-shadow: 0 12px 26px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); backdrop-filter: blur(14px); }
-.office-inventory-toggle span { margin-right: auto; color: #d9c27e; font-family: var(--font-pixel); font-size: 9px; font-weight: 850; letter-spacing: .12em; }
+.office-inventory-toggle { min-width: 178px; min-height: 42px; margin-left: auto; padding: 0 12px 0 14px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; pointer-events: auto; border: 1px solid rgba(223,195,125,.42); border-radius: 11px; color: #f5e8c8; background: rgba(8,17,27,.96); box-shadow: 0 12px 26px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); }
+.office-inventory-toggle span { margin-right: auto; color: #d9c27e; font-family: var(--font-pixel); font-size: 11px; font-weight: 850; letter-spacing: .12em; }
 .office-inventory-toggle strong { min-width: 25px; color: #f7f0df; font: 800 12px/1 var(--font-pixel); text-align: center; }
 .office-inventory-toggle i { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid rgba(223,195,125,.3); border-radius: 50%; color: #e5c76e; font: normal 700 16px/1 system-ui; }
 .office-inventory-toggle i .mark { width: 10px; height: 10px; }
-.office-inventory-panel { width: 100%; max-height: calc(100% - 52px); margin-bottom: 10px; display: flex; flex-direction: column; overflow: hidden; pointer-events: auto; border: 1px solid rgba(223,195,125,.34); border-radius: 15px; color: #f5ead2; background: rgba(8,17,27,.965); box-shadow: 0 24px 54px rgba(2,6,11,.62),inset 0 0 0 1px rgba(255,255,255,.035); backdrop-filter: blur(18px); animation: av-pop-in .22s ease both; }
+.office-inventory-panel { width: 100%; max-height: calc(100% - 52px); margin-bottom: 10px; display: flex; flex-direction: column; overflow: hidden; pointer-events: auto; border: 1px solid rgba(223,195,125,.34); border-radius: 15px; color: #f5ead2; background: rgba(8,17,27,.96); box-shadow: 0 24px 54px rgba(2,6,11,.62),inset 0 0 0 1px rgba(255,255,255,.035); animation: av-pop-in .22s ease both; }
 .office-inventory-panel > header { padding: 16px 17px 13px; border-bottom: 1px solid rgba(223,195,125,.18); background: radial-gradient(120% 140% at 0 0,rgba(50,104,110,.24),transparent 55%); }
-.office-inventory-panel header small { color: #69b9b2; font-family: var(--font-pixel); font-size: 8.5px; font-weight: 850; letter-spacing: .13em; }
+.office-inventory-panel header small { color: #69b9b2; font-family: var(--font-pixel); font-size: 11px; font-weight: 850; letter-spacing: .13em; }
 .office-inventory-panel h3 { margin: 5px 0 6px; color: #f5e4b9; font: 850 16px/1.15 var(--font-pixel); letter-spacing: .01em; }
 .office-inventory-panel p { margin: 0; color: #b9b5a8; font-size: 11.5px; line-height: 1.45; }
 .office-inventory-panel header > div { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 6px; }
 .office-inventory-panel header > div span { padding: 4px 7px; border: 1px solid rgba(121,174,172,.22); border-radius: 999px; color: #ccd5ce; background: rgba(24,48,58,.62); font-size: 9.5px; }
 .office-inventory-list { min-height: 0; padding: 7px; overflow: auto; overscroll-behavior: contain; scrollbar-color: #77643c #101c27; }
 .office-inventory-list button { width: 100%; min-height: 51px; padding: 7px 8px; display: grid; grid-template-columns: 9px minmax(0,1fr) auto; align-items: center; gap: 9px; border: 0; border-radius: 9px; color: #eee5d0; background: transparent; text-align: left; transition: background .16s ease,transform .16s ease; }
-.office-inventory-list button:hover,.office-inventory-list button:focus-visible { outline: 0; background: rgba(64,107,111,.23); transform: translateX(2px); }
+.office-inventory-list button:hover { background: rgba(64,107,111,.23); transform: translateX(2px); }
+.office-inventory-list button:focus-visible { outline: 2px solid var(--brass-bright); outline-offset: 2px; background: rgba(64,107,111,.23); }
 .office-inventory-list .inventory-type { width: 7px; height: 7px; border-radius: 50%; background: #5fa9a4; box-shadow: 0 0 0 3px rgba(95,169,164,.1); }
 .office-inventory-list .type-staff { background: #d2ae62; }.office-inventory-list .type-connection { background: #7aa58a; }.office-inventory-list .type-rival { background: #a97883; }.office-inventory-list .type-cosmetic { background: #b78fc2; }
 .office-inventory-list button > span { min-width: 0; }
 .office-inventory-list button strong,.office-inventory-list button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .office-inventory-list button strong { color: #f3ead6; font-size: 11.5px; font-weight: 750; }
 .office-inventory-list button small { margin-top: 3px; color: #9faeae; font-size: 9.5px; }
-.office-inventory-list button b { padding: 4px 6px; border: 1px solid rgba(223,195,125,.25); border-radius: 6px; color: #d9c27e; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .08em; }
+.office-inventory-list button b { padding: 4px 6px; border: 1px solid rgba(223,195,125,.25); border-radius: 6px; color: #d9c27e; font-family: var(--font-pixel); font-size: 11px; letter-spacing: .08em; }
 .office-inventory-empty { margin: 9px; color: #a9b4b1; font-size: 11px; text-align: center; }.office-world-shell:has(.office-inventory.is-open) .world-mission-board { opacity: 0; transform: translateY(-8px) rotate(1deg); pointer-events: none; }.office-hotspot.is-active i { background: #fff2b6; box-shadow: 0 0 0 7px rgba(250,216,126,.11),0 0 20px rgba(250,216,126,.82); }@keyframes av-hotspot-breathe { 50% { transform: scale(1.16); opacity: .76; } }
 /* ---------------------------------------------------- building directory
 
@@ -467,7 +438,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
    room coming through a 14px blur for no legible benefit; at 96% there is a
    brass plate, which is what it was drawn as. */
 .office-floors { position: absolute; z-index: 90; left: 16px; top: 16px; width: min(268px, calc(100% - 32px)); padding: 9px 9px 7px; display: flex; flex-direction: column; gap: 5px; border: 1px solid rgba(223,195,125,.42); border-radius: 13px; background: rgba(8,17,27,.96); box-shadow: 0 14px 30px rgba(3,7,12,.46),inset 0 0 0 1px rgba(255,255,255,.035); }
-.office-floors-plate { margin: 0 0 1px 5px; color: #d9c27e; font-family: var(--font-pixel); font-size: 8.5px; font-weight: 850; letter-spacing: .19em; text-transform: uppercase; }
+.office-floors-plate { margin: 0 0 1px 5px; color: #d9c27e; font-family: var(--font-pixel); font-size: 11px; font-weight: 850; letter-spacing: .19em; text-transform: uppercase; }
 .office-floors-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .office-floor-button { width: 100%; padding: 7px 9px 7px 7px; display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 9px; color: #eee5d0; background: transparent; text-align: left; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
 .office-floor-button:hover, .office-floor-button:focus-visible { outline: 0; border-color: rgba(223,195,125,.3); background: rgba(64,107,111,.23); transform: translateX(2px); }
@@ -480,7 +451,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 .office-floor-blurb { margin-top: 1px; overflow: hidden; color: #9faeae; font-size: 9.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .office-floor-count { display: grid; justify-items: center; gap: 1px; }
 .office-floor-count-number { color: #f5e4b9; font-family: var(--font-display); font-size: 15px; font-weight: 700; line-height: 1; }
-.office-floor-count-label { color: #7f9a99; font-family: var(--font-pixel); font-size: 7px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+.office-floor-count-label { color: #7f9a99; font-family: var(--font-pixel); font-size: 11px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
 @media (max-width: 640px) {
   .office-floors { left: 10px; right: 10px; top: 10px; width: auto; padding: 7px; }
   .office-floors-plate { display: none; }
@@ -631,7 +602,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 /* Unlocked staff become a visible cast rather than remaining catalog art. */
 .firm-staff-roster { margin: 0 4px 22px; display: grid; grid-template-columns: minmax(190px, 245px) 1fr; min-height: 242px; overflow: hidden; border: 1px solid rgba(223,193,119,.44); border-radius: 16px; color: #efe6ce; background: linear-gradient(118deg,#101b28,#172b38 48%,#0d1823); box-shadow: 0 18px 42px rgba(7,12,18,.24), inset 0 0 0 1px rgba(255,255,255,.04); }
 .firm-staff-roster > header { position: relative; z-index: 2; padding: 25px 23px; border-right: 1px solid rgba(223,193,119,.22); background: radial-gradient(circle at 20% 12%,rgba(229,195,116,.14),transparent 48%); }
-.firm-staff-roster > header span { color: #77c7ba; font-family: var(--font-pixel); font-size: 9px; font-weight: 800; letter-spacing: .19em; }
+.firm-staff-roster > header span { color: #77c7ba; font-family: var(--font-pixel); font-size: 11px; font-weight: 800; letter-spacing: .19em; }
 .firm-staff-roster > header h2 { margin: 7px 0 9px; color: #f4d98c; font-size: 24px; }
 .firm-staff-roster > header p { margin: 0; color: #b8b4a7; font-size: 12px; line-height: 1.55; }
 .firm-staff-roster-stage { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(122px,1fr); align-items: end; gap: 3px; padding: 8px 12px 12px; overflow-x: auto; background: linear-gradient(180deg,rgba(113,157,167,.08),transparent 44%),linear-gradient(180deg,transparent 73%,rgba(5,10,16,.58) 73%); }
@@ -647,7 +618,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 .firm-staff-roster-stage article:hover .firm-staff-model { transform: translateY(-4px); }
 .firm-staff-roster-stage article.is-available .firm-staff-model { opacity: .68; filter: saturate(.68); }
 .firm-staff-nameplate { position: relative; z-index: 3; width: calc(100% - 8px); min-height: 53px; margin-top: -18px; padding: 7px 8px 8px; border: 1px solid rgba(223,193,119,.32); border-radius: 9px; text-align: center; background: rgba(10,18,27,.92); box-shadow: 0 8px 17px rgba(2,6,10,.35); }
-.firm-staff-nameplate small { display: block; color: #78cabb; font-family: var(--font-pixel); font-size: 7.5px; font-weight: 800; letter-spacing: .13em; }
+.firm-staff-nameplate small { display: block; color: #78cabb; font-family: var(--font-pixel); font-size: 11px; font-weight: 800; letter-spacing: .13em; }
 .firm-staff-roster-stage article.is-available .firm-staff-nameplate small { color: #e5bd69; }
 .firm-staff-nameplate strong { display: block; margin-top: 2px; color: #f4ead4; font-size: 12px; line-height: 1.05; }
 .firm-staff-nameplate span { display: block; margin-top: 3px; overflow: hidden; color: #a9a99f; font-size: 8px; letter-spacing: .07em; text-overflow: ellipsis; white-space: nowrap; }
@@ -768,7 +739,7 @@ h1, h2 { font-family: var(--font-display); font-weight: 620; }
 
 .office-event-overlay {
   position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 18px;
-  background: rgba(5, 8, 13, 0.62); backdrop-filter: blur(4px);
+  background: #0a1218;
   animation: av-fade-in 0.35s ease;
 }
 .office-event {

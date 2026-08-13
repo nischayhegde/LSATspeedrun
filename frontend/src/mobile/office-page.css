@@ -26,10 +26,8 @@
     border-left: 3px solid #d4b560;
     border-radius: 5px 12px 12px 5px;
     color: #f2ead5;
-    background: rgba(8, 19, 29, .7);
+    background: rgba(8, 19, 29, .96);
     box-shadow: 0 10px 25px rgba(2,7,12,.2);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
     pointer-events: none;
   }
   .office-mobile-brief-toggle {
@@ -47,15 +45,13 @@
     border: 1px solid rgba(235, 207, 143, .55);
     border-radius: 14px;
     color: #f3e3b8;
-    background: rgba(8, 19, 29, .78);
+    background: rgba(8, 19, 29, .96);
     box-shadow: 0 10px 26px rgba(2,7,12,.28);
     font-family: var(--font-pixel);
-    font-size: 8px;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+    font-size: 11px;
   }
   .office-mobile-brief-sheet > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-  .office-mobile-brief-sheet header small { color: #79c4b8; font-family: var(--font-pixel); font-size: 8px; letter-spacing: .12em; }
+  .office-mobile-brief-sheet header small { color: #79c4b8; font-family: var(--font-pixel); font-size: 11px; letter-spacing: .12em; }
   .office-mobile-brief-sheet header h2 { margin: 4px 0 0; font-family: var(--font-display); font-size: 24px; }
   .office-mobile-brief-sheet header button { width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.14); border-radius: 13px; color: #eee0bd; background: rgba(255,255,255,.05); font-size: 23px; }
   .office-mobile-current-case {
@@ -83,19 +79,20 @@
   .office-mobile-current-case small,
   .office-mobile-current-case strong,
   .office-mobile-current-case em { display: block; }
-  .office-mobile-current-case small { color: #79c4b8; font-family: var(--font-pixel); font-size: 7.5px; }
+  .office-mobile-current-case small { color: #79c4b8; font-family: var(--font-pixel); font-size: 11px; }
+  .office-mobile-current-case.is-on-hold small { color: #efaf8f; }
   .office-mobile-current-case strong { margin-top: 3px; overflow: hidden; font-family: var(--font-display); font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
   .office-mobile-current-case em { margin-top: 3px; color: #9fb0aa; font-size: 11px; font-style: normal; }
   .office-mobile-current-case b { display: flex; align-items: center; gap: 4px; color: #ebca72; font-size: 11px; }
   .office-mobile-brief-metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
   .office-mobile-brief-metrics > span { min-height: 64px; padding: 9px; display: grid; align-content: center; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.035); }
-  .office-mobile-brief-metrics small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 7px; }
+  .office-mobile-brief-metrics small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 11px; }
   .office-mobile-brief-metrics strong { margin-top: 4px; color: #f0cf78; font-family: var(--font-display); font-size: 16px; }
   .office-mobile-brief-metrics em { margin-top: 2px; color: #91a49f; font-size: 9px; font-style: normal; }
   .office-mobile-next-office { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 12px; border-radius: 14px; background: rgba(223, 191, 105, .08); }
   .office-mobile-next-office span small,
   .office-mobile-next-office span strong { display: block; }
-  .office-mobile-next-office span small { color: #83c5ba; font-family: var(--font-pixel); font-size: 7px; }
+  .office-mobile-next-office span small { color: #83c5ba; font-family: var(--font-pixel); font-size: 11px; }
   .office-mobile-next-office span strong { margin-top: 4px; font-family: var(--font-display); font-size: 16px; }
   .office-mobile-next-office > div { height: 8px; position: relative; border-radius: 99px; background: rgba(255,255,255,.1); }
   .office-mobile-next-office > div i { height: 100%; display: block; border-radius: inherit; background: #d9b75e; }

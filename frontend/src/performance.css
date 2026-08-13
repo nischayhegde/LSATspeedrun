@@ -214,23 +214,26 @@
 .index-ring-glyph { width: 34px; height: 34px; color: rgba(240,211,127,.5); }
 .index-ring-empty small { margin-top: 8px; color: #6c8886; }
 
-.performance-metrics { margin: 16px 0 24px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-/* Each card is a full-width <button> ("trigger") so hover is decorative and
-   click/tap/Enter is the real affordance — the same control surfaces a mouse
-   and a phone thumb equally. */
-.metric-card { flex: 1 1 220px; border: 1px solid rgba(226,194,118,.2); border-radius: 14px; overflow: hidden; color: #eee5d1; background: linear-gradient(150deg,#172837,#111d2a); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 6px 16px -8px rgba(154,108,40,.12); transition: border-color .18s ease, box-shadow .18s ease; }
-.metric-card.is-expanded { border-color: rgba(114,208,192,.5); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 0 0 1px rgba(114,208,192,.18); }
-.metric-card-trigger { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 133px; padding: 16px; cursor: pointer; border-radius: inherit; }
+/* Equal-height instruments. A card used to grow 2–3× when opened and shove
+   Performance Line down the page; the extra sentence now lives in one reserved
+   strip under the row, so the five faces stay one height. */
+.performance-metrics { margin: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.metric-card { flex: 1 1 180px; display: flex; min-width: 0; border: 1px solid rgba(226,194,118,.2); border-radius: 14px; overflow: hidden; color: #eee5d1; background: linear-gradient(150deg,#172837,#111d2a); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 6px 16px -8px rgba(154,108,40,.12); transition: border-color .18s ease, box-shadow .18s ease; }
+.metric-card.is-selected { border-color: rgba(114,208,192,.5); box-shadow: 0 14px 28px -10px rgba(5,9,15,.32), 0 0 0 1px rgba(114,208,192,.18); }
+.metric-card-trigger { all: unset; display: flex; flex: 1; flex-direction: column; box-sizing: border-box; width: 100%; min-height: 124px; padding: 14px 16px 13px; cursor: pointer; border-radius: inherit; }
 .metric-card-trigger:hover, .metric-card-trigger:focus-visible { background: rgba(114,208,192,.05); }
 .metric-card-trigger:focus-visible { outline: 2px solid rgba(114,208,192,.55); outline-offset: -2px; }
 .metric-card-trigger > div { display: flex; align-items: center; gap: 7px; color: #70cabb; }.metric-card-trigger > div span { font-family: var(--font-pixel); font-size: 8px; font-weight: 900; letter-spacing: .13em; }
-.metric-card-chevron { margin-left: auto; color: rgba(114,208,192,.55); transition: transform .18s ease; }
-.metric-card.is-expanded .metric-card-chevron { transform: rotate(180deg); }
-.metric-card-trigger > strong { display: block; margin-top: 13px; color: #f0d27f; font-family: var(--font-display); font-size: 33px; line-height: 1; text-align: left; }.metric-card-trigger > strong.stat-empty { color: rgba(240,211,127,.4); font-size: 22px; font-weight: 400; letter-spacing: .03em; }.metric-card-trigger > small { display: block; margin-top: 7px; color: #91a0a0; font-size: 10px; line-height: 1.4; text-align: left; }
-.metric-detail { padding: 0 16px 16px; border-top: 1px solid rgba(255,255,255,.08); animation: metric-detail-in .16s ease; }
-.metric-detail > p { margin: 12px 0 0; color: #c3cbc2; font-size: 12px; line-height: 1.5; }
-.metric-detail > small { display: block; margin-top: 8px; color: #8b9d99; font-size: 10.5px; line-height: 1.4; }
-.metric-detail .metric-trend-up { color: #79d0be; }.metric-detail .metric-trend-down { color: #e2ad6f; }
+.metric-card-trigger > strong { display: block; margin-top: 11px; color: #f0d27f; font-family: var(--font-display); font-size: 33px; line-height: 1; text-align: left; }.metric-card-trigger > strong.stat-empty { color: rgba(240,211,127,.4); font-size: 22px; font-weight: 400; letter-spacing: .03em; }
+.metric-card-trigger > small { display: flex; flex-direction: column; justify-content: flex-start; gap: 3px; min-height: 2.7em; margin-top: auto; padding-top: 8px; color: #91a0a0; font-size: 10px; line-height: 1.35; text-align: left; font-style: normal; }
+.metric-card-trigger > small > span { display: block; }
+.metric-card-trigger > small em { font-style: normal; }
+.metric-card-trigger .metric-trend-up { color: #79d0be; }.metric-card-trigger .metric-trend-down { color: #e2ad6f; }
+.performance-metrics-detail { flex: 1 1 100%; min-height: 44px; padding: 10px 16px; display: grid; align-content: center; border: 1px solid rgba(226,194,118,.2); border-radius: 12px; color: #c3cbc2; background: linear-gradient(150deg,#172837,#111d2a); box-shadow: 0 10px 22px -12px rgba(5,9,15,.28); }
+.performance-metrics-detail > p { margin: 0; font-size: 12.5px; line-height: 1.45; }
+.performance-metrics-detail em { font-style: normal; }
+.performance-metrics-idle { color: #8b9d99; }
+.performance-metrics-detail .metric-trend-up { color: #79d0be; }.performance-metrics-detail .metric-trend-down { color: #e2ad6f; }
 @keyframes metric-detail-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .metric-breakdown-review { grid-template-columns: 1fr; }
 .metric-breakdown-review > div { display: grid; grid-template-columns: 70px 1fr 30px; align-items: center; gap: 9px; padding: 3px 0; color: #aeb6ad; font-size: 11px; }
@@ -488,7 +491,7 @@
   .dash-next .focus-sprint-button { width: 100%; grid-column: 1/3; justify-content: center; }
   .dash-summary-scenery { display: none; }
   .index-ring { width: 96px; height: 96px; }.index-ring strong { font-size: 35px; }
-  .metric-card { flex-basis: calc(50% - 5px); }.metric-card-trigger { min-height: 115px; padding: 13px; }.metric-card-trigger > strong { font-size: 27px; }
+  .metric-card { flex-basis: calc(50% - 5px); }.metric-card-trigger { min-height: 108px; padding: 12px; }.metric-card-trigger > strong { font-size: 27px; }.performance-metrics-detail { min-height: 40px; padding: 8px 12px; }
   .active-run-chip { flex-wrap: wrap; }.active-run-pause { flex-basis: 100%; justify-content: center; }
   .strategy-lab-panel { padding: 18px 13px; }.strategy-comparison,.strategy-catalog-grid { grid-template-columns: 1fr; }.strategy-comparison > div { min-height: 92px; }.strategy-results-detail > summary span { margin: 4px 0 0; display: block; }
   /* Three columns instead of five: the chevron goes (the row still opens on
@@ -626,7 +629,6 @@
 }
 .metric-card:has(.metric-card-trigger:active) { transform: translateY(0); box-shadow: var(--el-1); }
 .metric-card-trigger { transition: background var(--mo-1) linear; }
-.metric-card-chevron { transition: transform var(--mo-3) var(--mo-out); }
 
 /* ------------------------------------------------ rows and audits */
 

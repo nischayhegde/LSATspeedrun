@@ -410,7 +410,9 @@ type TrafficAgent = {
   heading: number
   /** 0..1 ramp; drives scale, and gates the despawn hand-off. */
   ramp: number
-  phase: 'in' | 'run' | 'out' | 'idle'
+  phase: 'in' | 'run' | 'out' | 'idle' | 'tunnel'
+  /** World units driven past a portal into a tunnel mouth before despawn. */
+  tunnelTravel: number
   /** Seconds of travel left before the agent becomes eligible to leave. */
   life: number
   /** Seconds still to be spent standing at a dock. */
@@ -585,6 +587,7 @@ export class TrafficSim {
         heading: 0,
         ramp: 0,
         phase: 'idle',
+        tunnelTravel: 0,
         life: 0,
         dwell: 0,
         stopAtEnd: false,
@@ -943,19 +946,33 @@ export class TrafficSim {
     agent.active = false
     agent.phase = 'idle'
     agent.ramp = 0
+    agent.tunnelTravel = 0
     agent.edge = -1
     agent.object.visible = false
   }
 
   /**
+   * Drive past a portal into a tunnel mouth, then despawn at full scale.
+   *
+   * Scale-fading at the edge of the map is what made cars vanish. A portal is
+   * now a mouth: the vehicle keeps its size, keeps its heading, and is only
+   * removed once it is inside the dark.
+   */
+  private beginTunnel(agent: TrafficAgent, index: number) {
+    this.releaseToken(agent, index)
+    this.releaseBerth(agent, index)
+    agent.phase = 'tunnel'
+    agent.tunnelTravel = 0
+    agent.stopAtEnd = false
+    agent.dwell = 0
+    agent.object.scale.setScalar(agent.baseScale)
+  }
+
+  /**
    * Begin the fade-out, wherever the agent stands.
    *
-   * The agent is parked exactly where it stopped and then frozen: an exit is
-   * either taken at a portal (the edge of the network, with nothing behind it
-   * to watch the vehicle dissolve from) or off-camera, so there is no motion
-   * left worth simulating. Freezing also removes the trap that a leaving agent
-   * still sitting at the far end of its edge would re-trigger the node crossing
-   * on every subsequent frame.
+   * Road portal exits use `beginTunnel` instead. An unseen lifetime expiry
+   * despawns immediately so nothing shrinks in view.
    */
   private beginExit(agent: TrafficAgent, index: number) {
     this.releaseToken(agent, index)
@@ -1022,9 +1039,11 @@ export class TrafficSim {
     }
 
     agent.active = true
-    agent.phase = 'in'
-    agent.ramp = 0
-    agent.distance = Math.min(start, edge.length * .5)
+    const fromPortal = this.kind === 'road' && node.portal
+    agent.phase = fromPortal ? 'run' : 'in'
+    agent.ramp = fromPortal ? 1 : 0
+    agent.tunnelTravel = 0
+    agent.distance = fromPortal ? -1.7 : Math.min(start, edge.length * .5)
     agent.speed = edge.speed * agent.personal * .45
     agent.dwell = 0
     agent.yielded = 0
@@ -1035,7 +1054,7 @@ export class TrafficSim {
     this.decideStop(agent, index, chosen)
     agent.heading = Math.atan2(edge.dx, edge.dz)
     this.place(agent, 1)
-    agent.object.scale.setScalar(.001)
+    agent.object.scale.setScalar(fromPortal ? agent.baseScale : .001)
     agent.object.visible = true
     return true
   }
@@ -1138,7 +1157,20 @@ export class TrafficSim {
       // Handling it here rather than at the bottom of the loop keeps a leaving
       // agent out of the node-crossing code, which would otherwise re-fire on
       // it every frame now that it is sitting at the far end of its edge.
+      if (agent.phase === 'tunnel') {
+        agent.tunnelTravel += agent.speed * step
+        agent.object.position.x += Math.sin(agent.heading) * agent.speed * step
+        agent.object.position.z += Math.cos(agent.heading) * agent.speed * step
+        agent.object.scale.setScalar(agent.baseScale)
+        if (agent.tunnelTravel > 2.6) this.despawn(agent, index)
+        continue
+      }
+
       if (agent.phase === 'out') {
+        if (unseen(agent.object.position, 2.2, this.fogDistance)) {
+          this.despawn(agent, index)
+          continue
+        }
         agent.ramp -= step / this.fade
         if (agent.ramp <= 0) { this.despawn(agent, index); continue }
         agent.object.scale.setScalar(Math.max(.001, agent.baseScale * THREE.MathUtils.smoothstep(agent.ramp, 0, 1)))
@@ -1269,6 +1301,7 @@ export class TrafficSim {
       }
 
       let left = false
+      let tunneled = false
       // A `while` rather than an `if`: a very short edge between two welded
       // nodes can be shorter than one frame's travel, and skipping the node in
       // that case would leave the agent's edge and position disagreeing.
@@ -1283,12 +1316,13 @@ export class TrafficSim {
           && (agent.life <= 0 || arrived.out.length <= 1 || hashUnit(agent.seed + agent.turns * 13.7) < .5)
         const next = exiting ? -1 : agent.nextEdge >= 0 ? agent.nextEdge : this.chooseEdge(agent.edge, agent)
         if (next < 0) {
-          // Pinned to the end of the edge it is actually on. An agent that
-          // stops crossing has to keep the geometry it stopped at; carrying the
-          // overshoot onto an edge it never entered would fling it the whole
-          // length of that edge, back to its start node, in one frame.
           agent.distance = current.length
           left = true
+          if (this.kind === 'road' && arrived.portal) {
+            this.beginTunnel(agent, index)
+            tunneled = true
+            left = false
+          }
           break
         }
         agent.stopAtEnd = false
@@ -1311,14 +1345,11 @@ export class TrafficSim {
       if (left) {
         this.beginExit(agent, index)
       } else if (agent.phase === 'run' && agent.life <= 0) {
-        // Lifetime alone is not enough to justify leaving: an agent that has
-        // simply been on the road long enough waits until it is off-camera, and
-        // otherwise buys itself another few seconds and asks again. Testing the
-        // eased render position rather than re-deriving the exact one is
-        // deliberate — it is what the player is actually looking at.
-        if (unseen(agent.object.position, 2.2, this.fogDistance)) this.beginExit(agent, index)
+        if (unseen(agent.object.position, 2.2, this.fogDistance)) this.despawn(agent, index)
         else agent.life = 6 + hashUnit(agent.seed + this.elapsed) * 6
       }
+
+      if (tunneled || !agent.active) continue
 
       if (agent.token >= 0 && agent.token !== this.graph.edges[agent.edge].to) {
         // Released once clear of the junction, not the instant it is entered,
@@ -1339,7 +1370,9 @@ export class TrafficSim {
         // spinning on the spot while it waits at a junction.
         const turnRate = 2.4 + Math.min(6, agent.speed * 3.4)
         agent.heading = approachAngle(agent.heading, targetHeading, turnRate, step)
-        this.place(agent, 1 - Math.exp(-11 * step))
+        // Off-camera hulls still have to sit on the lane — crossings read this
+        // position — but they do not need the corner ease.
+        this.place(agent, unseen(agent.object.position, 4, this.fogDistance) ? 1 : 1 - Math.exp(-11 * step))
       }
 
       // --- ramp --------------------------------------------------------
@@ -2511,6 +2544,12 @@ export type CrowdOptions = {
   width?: number
   /** Walking height of the rig root. */
   lift?: number
+  /**
+   * Deck-aware ground height. Same test counsel uses, so a pavement that
+   * crosses a canal or a river span is walked at deck height rather than
+   * through the water (or the slab) at the default lift.
+   */
+  groundY?: (x: number, z: number) => number
   /** Seconds a walker spends fading in/out. */
   fade?: number
   /** Beyond this distance a point counts as hidden by fog. */
@@ -3204,6 +3243,7 @@ export class Crowd {
   private readonly animateWithin: number
   private readonly halfWidth: number
   private readonly lift: number
+  private readonly groundY?: (x: number, z: number) => number
   private readonly fade: number
   private readonly fogDistance: number
   private readonly cullRadius: number
@@ -3244,6 +3284,7 @@ export class Crowd {
   private sampleDz = 0
   private spawnCursor = 0
   private elapsed = 0
+  private tick = 0
 
   constructor(options: CrowdOptions) {
     const defaultHalfWidth = (options.width ?? 1.5) * .5
@@ -3255,6 +3296,7 @@ export class Crowd {
     this.animateWithin = options.animateWithin ?? 34
     this.halfWidth = defaultHalfWidth
     this.lift = options.lift ?? .12
+    this.groundY = options.groundY
     this.fade = Math.max(.05, options.fade ?? 1.2)
     this.fogDistance = options.fogDistance ?? 58
     this.cullRadius = options.cullRadius ?? 120
@@ -3563,6 +3605,10 @@ export class Crowd {
     this.targetAlive = Math.max(0, Math.round(this.walkers.length * (options.occupancy ?? .8)))
   }
 
+  private heightAt(x: number, z: number) {
+    return this.groundY ? this.groundY(x, z) : this.lift
+  }
+
   /**
    * Position and tangent at an arc length along a footway, into the sample
    * scratch fields. A binary search rather than a cached segment cursor: it is
@@ -3611,11 +3657,9 @@ export class Crowd {
    * somebody inside one.
    */
   private placeAcross(across: number) {
-    scratchTarget.set(
-      this.sampleX + this.sampleDz * across,
-      this.lift,
-      this.sampleZ - this.sampleDx * across,
-    )
+    const x = this.sampleX + this.sampleDz * across
+    const z = this.sampleZ - this.sampleDx * across
+    scratchTarget.set(x, this.heightAt(x, z), z)
   }
 
   /**
@@ -4255,6 +4299,7 @@ export class Crowd {
     const step = Math.min(Math.max(delta, 0), MAX_DELTA)
     if (step <= 0) return
     this.elapsed += step
+    this.tick += 1
     refreshCulling(camera)
     const animateWithinSquared = this.animateWithin * this.animateWithin
     const cullSquared = this.cullRadius * this.cullRadius
@@ -4280,7 +4325,7 @@ export class Crowd {
       }
     }
     if (lodActors.length && !this.reduced) {
-      assignHumanoidLod(lodActors, camera, { fullBudget: 3, mediumBudget: 8, farDistance: this.animateWithin })
+      assignHumanoidLod(lodActors, camera, { fullBudget: 2, mediumBudget: 5, farDistance: this.animateWithin * .72 })
     }
 
     let alive = 0
@@ -4345,14 +4390,12 @@ export class Crowd {
         // crossing itself still starts at the kerb, and stepping off begins by
         // walking that step back in. See `resolveStandoffs`.
         if (walker.crossPhase === 'wait' && link.waitBack > 0) {
-          scratchTarget.set(link.waitX, this.lift, link.waitZ)
+          scratchTarget.set(link.waitX, this.heightAt(link.waitX, link.waitZ), link.waitZ)
         } else {
           const t = THREE.MathUtils.clamp(walker.crossProgress, 0, 1)
-          scratchTarget.set(
-            link.fromX + (link.toX - link.fromX) * t,
-            this.lift,
-            link.fromZ + (link.toZ - link.fromZ) * t,
-          )
+          const x = link.fromX + (link.toX - link.fromX) * t
+          const z = link.fromZ + (link.toZ - link.fromZ) * t
+          scratchTarget.set(x, this.heightAt(x, z), z)
         }
         walker.root.position.lerp(scratchTarget, 1 - Math.exp(-11 * step))
         // Facing the far kerb while crossing; while waiting, the head turns to
@@ -4445,7 +4488,10 @@ export class Crowd {
       // people do not plan a route round a bench, they notice it a stride or
       // two out and shift a shoulder's width — and it steers to whichever side
       // has the room rather than always the same way.
-      if (way.obstacles.length) {
+      if (way.obstacles.length && !(
+        walker.root.position.distanceToSquared(cameraPosition) > animateWithinSquared
+        && ((this.tick + index) & 1)
+      )) {
         const ahead = walker.distance + walker.direction * 1.9
         const near = Math.min(walker.distance, ahead) - .6
         const far = Math.max(walker.distance, ahead) + .6

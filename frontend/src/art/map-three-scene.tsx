@@ -11,6 +11,7 @@ import {
   clearReserved,
   corridorCrossStreets,
   corridorFrontage,
+  censusVacancyPct,
   developBlock,
   ellipseFrontage,
   fabricNoise,
@@ -27,6 +28,7 @@ import {
   type BlockSpec,
   type Corridor,
   type CorridorVoid,
+  type LotCensus,
   type CrossStreet,
   type PlannedBuilding,
   type PlannedStreet,
@@ -1437,7 +1439,9 @@ function createLevelBuilding(point: MapSceneTier, definition: ArcDefinition) {
   }
   if (isOldQuarter) {
     const roof = mesh(sharedGeometry.cone, material(0x4a4037, .95), [0, height + .8, 0])
-    roof.scale.set(width * .82, .65, 1.35)
+    // Held inside the plinth. The previous width*.82 / 1.35 pyramid, rotated
+    // 45°, reached past the flanking annexes and the two buildings read as one.
+    roof.scale.set(width * .58, .62, 1.02)
     roof.rotation.y = Math.PI / 4
     group.add(roof)
   } else {
@@ -1791,21 +1795,18 @@ function createBuoy(color = 0xb47b45, scale = 1) {
 }
 
 /**
- * How high the deck of a Treaty Sea landform sits, at the `y = -.22` every
- * caller places one at.
+ * How high the deck of a Treaty Sea landform sits.
  *
- * Derived rather than measured off a screenshot: the extrusion below is .34
- * deep with a .07 bevel at each end, so it spans .41 above its own origin, and
- * the origin is sunk .22 to put the coast under the swell. The buildings that
- * stand on one are plinthed and can afford to be set at .04 and buried; a
- * person is under a unit tall at `CROWD_RENDER_SCALE` and cannot.
- *
- * That sentence used to read ".49 units tall", which was wrong and was quoted
- * from here into two measurement harnesses before anybody measured a body:
- * `COUNSEL_RIG_HEIGHT` is 5.558, so the figure is .77 at the shipped scale and
- * was 1.54 before it. The conclusion is unchanged in the safe direction.
+ * The sea plane is at `OCEAN_SEA_Y`. The landform used to be placed on that
+ * same plane, so its underside and the water were coplanar and z-fought around
+ * every coast. It now sits `OCEAN_LANDFORM_SINK` below the sea, with extra
+ * extrusion so the deck height is unchanged.
  */
-const OCEAN_LANDFORM_TOP = .34 + .07 - .22
+const OCEAN_SEA_Y = -.22
+const OCEAN_LANDFORM_SINK = .12
+const OCEAN_LANDFORM_DEPTH = .34 + OCEAN_LANDFORM_SINK
+const OCEAN_LANDFORM_PLACE_Y = OCEAN_SEA_Y - OCEAN_LANDFORM_SINK
+const OCEAN_LANDFORM_TOP = OCEAN_LANDFORM_PLACE_Y + OCEAN_LANDFORM_DEPTH + .07
 
 function createIslandLandform(radius: number, seed: number, color = 0x66745f) {
   const shape = new THREE.Shape()
@@ -1819,9 +1820,9 @@ function createIslandLandform(radius: number, seed: number, color = 0x66745f) {
     else shape.lineTo(x, y)
   }
   shape.closePath()
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: .34, bevelEnabled: true, bevelSegments: 2, bevelSize: .09, bevelThickness: .07, curveSegments: 4 })
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: OCEAN_LANDFORM_DEPTH, bevelEnabled: true, bevelSegments: 2, bevelSize: .09, bevelThickness: .07, curveSegments: 4 })
   geometry.rotateX(Math.PI / 2)
-  geometry.translate(0, .34, 0)
+  geometry.translate(0, OCEAN_LANDFORM_DEPTH, 0)
   geometry.computeVertexNormals()
   return mesh(geometry, material(color, .96))
 }
@@ -1852,6 +1853,91 @@ function createSolarArray(scale = 1) {
  * .09 pavement it was overhanging.
  */
 const ARTICULATION = .12
+
+type BridgeDeck = { x: number; z: number; radius: number; topY: number }
+
+function registerBridge(root: THREE.Group, x: number, z: number, radius: number, topY: number) {
+  const bridges: BridgeDeck[] = (root.userData.bridges ??= [])
+  bridges.push({ x, z, radius, topY })
+}
+
+function counselGroundY(root: THREE.Group, x: number, z: number) {
+  let y = .12
+  const bridges: BridgeDeck[] = root.userData.bridges ?? []
+  for (const deck of bridges) {
+    const distance = Math.hypot(x - deck.x, z - deck.z)
+    const approach = 2.4
+    const deckY = deck.topY + .08
+    if (distance <= deck.radius) y = Math.max(y, deckY)
+    else if (distance < deck.radius + approach) {
+      const t = 1 - (distance - deck.radius) / approach
+      y = Math.max(y, .12 + t * t * (deckY - .12))
+    }
+  }
+  return y
+}
+
+/** A hillside mouth at a road portal so cars drive out of sight instead of shrinking. */
+function createRoadTunnel() {
+  const group = new THREE.Group()
+  const earth = material(0x5c6356, .96)
+  const stone = material(0x6e6a62, .9)
+  const dark = material(0x0c0b0a, 1)
+  // Local +Z is outward. The berm has to cover the whole 2.6 units a leaving
+  // car still travels after the portal, or the vehicle disappears in open air.
+  group.add(box([5.6, 3.4, 5.8], earth, [0, 1.45, 2.7]))
+  group.add(box([4.0, 2.8, .7], stone, [0, 1.28, 0]))
+  group.add(box([2.2, 1.65, .24], dark, [0, .92, .38]))
+  group.add(box([2.28, 1.72, 4.8], dark, [0, .9, 2.5]))
+  return group
+}
+
+function placePortalTunnels(root: THREE.Group, graph: RoadGraph) {
+  const solids: Array<{ x: number; z: number; r: number }> = []
+  root.traverse((object) => {
+    const box = object.userData.footprintBox as { hx: number; hz: number } | undefined
+    if (box) {
+      solids.push({ x: object.position.x, z: object.position.z, r: Math.hypot(box.hx, box.hz) })
+      return
+    }
+    const radius = Number(object.userData.footprintRadius ?? 0)
+    if (radius > .4) solids.push({ x: object.position.x, z: object.position.z, r: radius })
+  })
+  const blocked = (x: number, z: number, radius: number) =>
+    solids.some((solid) => Math.hypot(x - solid.x, z - solid.z) < solid.r + radius)
+
+  for (const nodeIndex of graph.portals) {
+    const node = graph.nodes[nodeIndex]
+    let dx = 0
+    let dz = 0
+    let found = false
+    for (const edge of graph.edges) {
+      if (edge.kind !== 'road') continue
+      if (edge.from === nodeIndex) { dx = edge.dx; dz = edge.dz; found = true; break }
+      if (edge.to === nodeIndex) { dx = -edge.dx; dz = -edge.dz; found = true; break }
+    }
+    if (!found) {
+      const heading = Math.hypot(node.x, node.z) || 1
+      dx = -node.x / heading
+      dz = -node.z / heading
+    }
+    // Outbound is away from the map, along the road that actually leaves
+    // this portal — or, if the graph had no road edge, along the radius.
+    let along = 1.55
+    let x = node.x - dx * along
+    let z = node.z - dz * along
+    for (let step = 0; step < 8 && blocked(x, z, 2.9); step += 1) {
+      along += 1.15
+      x = node.x - dx * along
+      z = node.z - dz * along
+    }
+    if (blocked(x, z, 2.4)) continue
+    const tunnel = createRoadTunnel()
+    tunnel.position.set(x, 0, z)
+    tunnel.rotation.y = Math.atan2(-dx, -dz)
+    root.add(tunnel)
+  }
+}
 
 function createBlockBuilding(width: number, height: number, depth: number, color: number, modern = false, emissiveBoost = 0) {
   const group = new THREE.Group()
@@ -1884,7 +1970,7 @@ function createBlockBuilding(width: number, height: number, depth: number, color
     const band = windowBand(width - .28, columns, .48 + floor * (height / floors), depth / 2 + .015, (floor + columns) % 3 === 0)
     group.add(band)
   }
-  group.add(box([width + ARTICULATION * 2, .12, depth + ARTICULATION * 2], trim, [0, height + .06, 0]))
+  group.add(box([width, .12, depth + ARTICULATION * 2], trim, [0, height + .06, 0]))
   const doorway = box([Math.min(.52, width * .28), Math.min(.82, height * .38), .055], material(0x263235, .58, modern ? .24 : .08), [0, Math.min(.42, height * .19), depth / 2 + .04])
   group.add(doorway)
   if (modern) {
@@ -1894,7 +1980,7 @@ function createBlockBuilding(width: number, height: number, depth: number, color
     const canopy = box([Math.min(1.3, width * .62), .08, canopyDepth], material(0x778284, .38, .38), [0, .72, depth / 2 + ARTICULATION - canopyDepth / 2])
     group.add(canopy)
   } else {
-    const cornice = box([width + ARTICULATION * 2, .16, depth + ARTICULATION * 2], trim, [0, height + .15, 0])
+    const cornice = box([width, .16, depth + ARTICULATION * 2], trim, [0, height + .15, 0])
     group.add(cornice)
     if (width > 1.55) {
       const chimney = box([.24, .62, .28], material(0x554a40, .94), [-width * .28, height + .46, -depth * .17])
@@ -1976,9 +2062,23 @@ function walkerHalfBeam() {
  * standing four hundred lines apart, and the route was a tenth of a unit off
  * the middle of its own paving.
  */
-const VILLAGE_FOOTWAY_IN = 1.05
-const VILLAGE_FOOTWAY_OUT = 1.66
+const VILLAGE_FOOTWAY_IN = .78
+const VILLAGE_FOOTWAY_OUT = 1.1
 const VILLAGE_FOOTWAY_MID = (VILLAGE_FOOTWAY_IN + VILLAGE_FOOTWAY_OUT) / 2
+/** Half-width of the village footway strip; paving ends at `VILLAGE_FOOTWAY_OUT`. */
+const VILLAGE_FOOTWAY_HALF = (VILLAGE_FOOTWAY_OUT - VILLAGE_FOOTWAY_IN) / 2
+/**
+ * Farmstead mesh at the corridor scale. `createFarmstead(.66)` marks 1.85×scale
+ * (~1.22); the barn, silo and near rails sit inside ~1.32. The old 2.2 disc
+ * still covered the 0.78–1.1 footway when the keep-filter was `yardD > 2.5`.
+ */
+const FARMSTEAD_SCALE = .66
+const FARMSTEAD_SOLID = 1.32
+const FARMSTEAD_YARD_MARGIN = .22
+/** Entire solid disc off the paving: yardD > solid + footway outer + margin. */
+const FARMSTEAD_YARD_CLEAR = FARMSTEAD_SOLID + VILLAGE_FOOTWAY_OUT + FARMSTEAD_YARD_MARGIN
+const MILESTONE_SOLID = .24
+const MILESTONE_VERGE = VILLAGE_FOOTWAY_OUT + MILESTONE_SOLID + .18
 
 /**
  * Whether planned buildings are reconciled against the corridors before they
@@ -2107,6 +2207,7 @@ function renderPlannedBuildings(
       lit: building.lit,
       rotationY: building.rotationY,
       roof: building.roof,
+      family: building.family,
     }, records.length))
   })
   if (!records.length) return null
@@ -2320,6 +2421,8 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
 
   const buildings: PlannedBuilding[] = []
   const trees: TreeRecord[] = []
+  const innerCensus: LotCensus = { lots: 0, buildings: 0 }
+  const fringeCensus: LotCensus = { lots: 0, buildings: 0 }
 
   // Only the wards are developed here. The civic corridor band (|z| < 5.8) is
   // the career route's high street and is built by addCityCorridor; the canal
@@ -2449,7 +2552,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     const bank = canalBank(block)
     const roll = hashUnit(block.seed * 1.31 + 9)
 
-    if (!bank && roll < .07 && centrality < .62) {
+    if (!bank && roll < .02 && centrality < .55) {
       // A small ward park: a planned void, not a failure to build.
       addBlockInterior(root, block, 0x596a49)
       for (let tree = 0; tree < 6; tree += 1) trees.push({
@@ -2461,31 +2564,38 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     }
 
     const zoning = zoningProfile(centrality, {
-      coreStoreys: [3.2, 5.4], fringeStoreys: [1.4, 2.3],
-      coreLot: [1, 1.85], fringeLot: [1.5, 2.9],
-      coreGap: .04, fringeGap: .42,
+      coreStoreys: [3.4, 5.6], fringeStoreys: [1.9, 3.05],
+      coreLot: [.88, 1.55], fringeLot: [1.02, 1.78],
+      coreGap: .05, fringeGap: .16,
     })
     const industrial = bank || (block.z > RAIL_BAND[1] && block.z < RAIL_BAND[1] + 6 && Math.abs(block.x) > 6)
     const spec: BlockSpec = {
       seed: block.seed,
       lotMin: zoning.lotMin,
       lotMax: zoning.lotMax,
-      setback: .16 + (1 - centrality) * .38,
-      buildingDepth: .95 + centrality * .6,
+      setback: .16 + (1 - centrality) * .32,
+      buildingDepth: 1.12 + centrality * .55,
       gap: zoning.gap,
       storeyHeight: .74,
       storeysMin: industrial ? 1.8 : zoning.storeysMin,
       storeysMax: industrial ? 3.2 : zoning.storeysMax,
       palette: industrial ? works : centrality > .48 ? brick : suburb,
       roof: industrial ? 'flat' : centrality > .62 ? 'parapet' : centrality > .34 ? 'flat' : 'pitched',
-      litChance: .12 + centrality * .3,
-      cornerBonus: centrality > .5 ? 1 : .35,
-      vacancy: .06 + (1 - centrality) * .3,
+      litChance: .22 + centrality * .38,
+      cornerBonus: centrality > .5 ? 1 : .4,
+      // Counted fill, not just a formula. Inner wards stay near-continuous;
+      // fringe may thin. Target: well under 8% empty on the inner grid.
+      vacancy: centrality >= .22 ? .008 : .02 + (1 - centrality) * .05,
     }
-    buildings.push(...developBlock(block, spec))
+    const census = centrality >= .22 ? innerCensus : fringeCensus
+    const built = developBlock(block, spec, census)
+    for (const unit of built) {
+      if (unit.height >= 2.15 && unit.height < 4.2 && unit.width <= 1.72) unit.family = 'townhouse'
+    }
+    buildings.push(...built)
 
     const courtyard = blockCourtyard(block, spec)
-    const dense = centrality > .55 && roll > .5
+    const dense = centrality > .38 && roll > .18
     if (courtyard) {
       if (dense && courtyard.width > 1.6 && courtyard.depth > 1.3) {
         // Back extensions and outbuildings fill a dense block's interior, so it
@@ -2496,7 +2606,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
         wings.forEach((wing, wingIndex) => {
           const centre = cursor + wing / 2
           cursor += wing
-          if (hashUnit(block.seed + wingIndex * 13) < .45) return
+          if (hashUnit(block.seed + wingIndex * 13) < (dense ? .08 : .28)) return
           const local = block.rotation
           buildings.push({
             x: courtyard.x + Math.cos(local) * centre,
@@ -2524,6 +2634,24 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     }
   })
 
+  const innerVacancy = censusVacancyPct(innerCensus)
+  const fringeVacancy = censusVacancyPct(fringeCensus)
+  // Old Quarter lot census (spawned buildings vs lots, not the vacancy formula):
+  // inner lots / buildings / vacancy% — target well under 8% empty on the inner grid.
+  root.userData.oldQuarterCensus = {
+    innerLots: innerCensus.lots,
+    innerBuildings: innerCensus.buildings,
+    innerVacancyPct: innerVacancy,
+    fringeLots: fringeCensus.lots,
+    fringeBuildings: fringeCensus.buildings,
+    fringeVacancyPct: fringeVacancy,
+  }
+  if (import.meta.env.DEV) {
+    console.info(
+      `Old Quarter census: inner ${innerCensus.lots} lots, ${innerCensus.buildings} buildings, ${innerVacancy.toFixed(1)}% vacant; `
+      + `fringe ${fringeCensus.lots} lots, ${fringeCensus.buildings} buildings, ${fringeVacancy.toFixed(1)}% vacant`,
+    )
+  }
   const cityBuildings = clearReserved(buildings, reserved)
   // Split by distance so frustum culling still has something to work with; a
   // single instanced batch spanning the whole quarter can never be culled.
@@ -2533,6 +2661,51 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
   renderPlannedBuildings(root, 'city', near, { cullRadius: 26 })
   renderPlannedBuildings(root, 'city', west, { cullRadius: 30 })
   renderPlannedBuildings(root, 'city', east, { cullRadius: 30 })
+
+  // Ward streets were stripped of furniture in a density pass. Lamps and
+  // benches go back on the kerbs — batched with the rest of the static
+  // scenery — skipping the corridor (already dressed), the canal, the railway,
+  // HQ parcels and rival compounds. Locals are dressed too, just further
+  // apart, so the outer wards read as streets rather than empty slots.
+  {
+    const kerbLines: Array<{ axis: 'ns' | 'ew'; position: number; streetClass: StreetClass }> = [
+      ...avenues.map((line) => ({ axis: 'ns' as const, position: line.position, streetClass: line.streetClass })),
+      ...streets.map((line) => ({ axis: 'ew' as const, position: line.position, streetClass: line.streetClass })),
+    ]
+    let furnishing = 0
+    for (const line of kerbLines) {
+      if (line.streetClass === 'alley') continue
+      if (line.axis === 'ew' && Math.abs(line.position) < CORRIDOR_HALF + .35) continue
+      if (line.axis === 'ew' && line.position > RAIL_BAND[0] - .15 && line.position < RAIL_BAND[1] + .15) continue
+      if (line.axis === 'ns' && line.position > CANAL_BAND[0] - .15 && line.position < CANAL_BAND[1] + .15) continue
+      const step = line.streetClass === 'arterial' ? 3.6 : line.streetClass === 'collector' ? 4.4 : 6.8
+      for (let along = -23.5; along <= 23.5; along += step) {
+        const x = line.axis === 'ns' ? line.position : along
+        const z = line.axis === 'ew' ? line.position : along
+        if (Math.abs(z) < CORRIDOR_HALF + .45) continue
+        if (inRail(z) || inCanal(x)) continue
+        if (isReserved(x, z, reserved, 1.1)) continue
+        const side = furnishing % 2 ? 1 : -1
+        const kerb = streetWidth(line.streetClass) / 2 + KERB_TO_PAVEMENT + .08
+        const px = line.axis === 'ns' ? x + side * kerb : x
+        const pz = line.axis === 'ew' ? z + side * kerb : z
+        if (isReserved(px, pz, reserved, .7)) continue
+        furnishing += 1
+        if (furnishing % 4 === 0) {
+          const bench = createBench(.62)
+          bench.position.set(px, .05, pz)
+          bench.rotation.y = line.axis === 'ns' ? (side > 0 ? 0 : Math.PI) : (side > 0 ? Math.PI / 2 : -Math.PI / 2)
+          markAuthoredProp(bench, .36)
+          root.add(bench)
+        } else {
+          const lamp = createLamp()
+          lamp.position.set(px, .05, pz)
+          markAuthoredProp(lamp, .16)
+          root.add(lamp)
+        }
+      }
+    }
+  }
 
   // Wharf landmark on the east bank of the canal.
   const wharf = claim(CANAL_BAND[1] + 1.4, -9)
@@ -2581,6 +2754,7 @@ function addCityEnvironment(root: THREE.Group, definition: ArcDefinition) {
     const walk = streetWidth(street.streetClass) / 2 + KERB_TO_PAVEMENT + STREET_PAVEMENT_HALF + walkerHalfBeam()
     const bridge = box([5.9, .2, (walk + .25) * 2], material(0x7b7770, .95), [CANAL_X, .13, street.position])
     root.add(bridge)
+    registerBridge(root, CANAL_X, street.position, Math.max(3.1, walk + .4), .23)
     if (index % 2 === 0) for (const side of [-1, 1]) {
       const lamp = createLamp()
       lamp.position.set(CANAL_X + side * 2.3, .2, street.position + walk + .14)
@@ -2776,7 +2950,10 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
     const tangent = route.getTangentAt(t).normalize()
     const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize().multiplyScalar(sideSign)
     const site = point.clone().add(side.multiplyScalar(2.8))
-    return { x: site.x, z: site.z, radius: 3.4 }
+    // Covers the headquarters plinth and the flanking annexes at ±2.85.
+    // 3.4 stopped at the office itself; the annexes then sat inside the
+    // high-street terrace and two buildings blended through each other.
+    return { x: site.x, z: site.z, radius: 4.6 }
   })
 
   /* --- The corridor section ----------------------------------------------
@@ -2903,6 +3080,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
   // subdivided rather than stamped; but the setback and the depth are the same
   // for every one of them, so the parade has a front line and a back line and
   // each unit genuinely fills its lot.
+  const corridorCensus: LotCensus = { lots: 0, buildings: 0 }
   const frontage = corridorFrontage(corridor, crossStreets, {
     seed: 6113,
     // Narrow lots, cut to a wide range. A shop unit is a narrow thing — the
@@ -2951,12 +3129,39 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
     // A hole in a shopping parade is a gap site, not the norm. Vacancy stays
     // near zero through the commercial middle and only opens up at the ends
     // where the street is turning into housing.
-    vacancy: (s) => Math.max(0, Math.abs(s / corridor.length - .5) - .28) * .5,
+    vacancy: (s) => Math.max(0, Math.abs(s / corridor.length - .5) - .38) * .18,
+    census: corridorCensus,
   })
 
+  const prior = root.userData.oldQuarterCensus as {
+    innerLots: number; innerBuildings: number; innerVacancyPct: number
+    fringeLots: number; fringeBuildings: number; fringeVacancyPct: number
+  } | undefined
+  const innerLots = (prior?.innerLots ?? 0) + corridorCensus.lots
+  const innerBuildings = (prior?.innerBuildings ?? 0) + corridorCensus.buildings
+  const innerVacancyPct = innerLots ? (1 - innerBuildings / innerLots) * 100 : 0
+  root.userData.oldQuarterCensus = {
+    innerLots,
+    innerBuildings,
+    innerVacancyPct,
+    fringeLots: prior?.fringeLots ?? 0,
+    fringeBuildings: prior?.fringeBuildings ?? 0,
+    fringeVacancyPct: prior?.fringeVacancyPct ?? 0,
+    corridorLots: corridorCensus.lots,
+    corridorBuildings: corridorCensus.buildings,
+  }
+  if (import.meta.env.DEV) {
+    console.info(
+      `Old Quarter census: inner ${innerLots} lots, ${innerBuildings} buildings, ${innerVacancyPct.toFixed(1)}% vacant`
+      + ` (corridor ${corridorCensus.lots}/${corridorCensus.buildings}; wards ${prior?.innerLots ?? 0}/${prior?.innerBuildings ?? 0})`,
+    )
+  }
   renderPlannedBuildings(root, 'city', frontage.map((lot) => ({
     x: lot.x, z: lot.z, width: lot.width, depth: lot.depth, height: lot.height,
     rotationY: lot.rotationY, color: lot.color, lit: lot.lit, roof: lot.roof, corner: lot.corner,
+    family: lot.use === 'housing' || (lot.use !== 'civic' && lot.storeys >= 2.8 && lot.width <= 1.55)
+      ? 'townhouse' as const
+      : undefined,
   })), { cullRadius: 22 })
 
   /* --- The shared canopy over the footway --------------------------------- */
@@ -3248,7 +3453,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
       stripe.rotation.y = corridor.facing(s, side)
       stripe.castShadow = false
       root.add(stripe)
-      if (hashUnit(bayIndex * 17.3 + (side > 0 ? 71 : 5)) > .34) continue
+      if (hashUnit(bayIndex * 17.3 + (side > 0 ? 71 : 5)) > .22) continue
       const [px, pz] = corridor.at(s + .46, (KERB_OFFSET - .34) * side)
       const parked = createVehicle([0x6d4d48, 0x52626a, 0x71664f, 0x455e59, 0x7a6a52, 0x8a7a63, 0x5d5750][bayIndex % 7])
       parked.position.set(px, .03, pz)
@@ -3264,7 +3469,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
   // where it is: lamps at a regular interval, trees between them, café tables
   // outside the lots that are actually shops, and nothing inside a junction.
   let lampIndex = 0
-  for (let s = 1.8; s < corridor.length - 1.4; s += 3.15) {
+  for (let s = 1.8; s < corridor.length - 1.4; s += 2.55) {
     const side: 1 | -1 = lampIndex % 2 === 0 ? -1 : 1
     lampIndex += 1
     if (nearJunction(s, side, .5)) continue
@@ -3284,7 +3489,7 @@ function addCityCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>, d
 
   // Café terraces and awnings, only outside lots that are shops.
   frontage.filter((lot) => lot.use === 'shopfront').forEach((lot, index) => {
-    if (hashUnit(index * 23.7 + 4) > .42) return
+    if (hashUnit(index * 23.7 + 4) > .22) return
     if (nearJunction(lot.s, lot.side, .3)) return
     const [cx, cz] = corridor.at(lot.s, 1.42 * lot.side)
     const cafe = createCafeSet(.62)
@@ -3486,9 +3691,10 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
   // somewhere: south to the turnpike and north to the back lane.
   for (const way of roadWays(root).slice(wayCount)) way.portal = false
 
-  // See `blocksFromGrid`: the village keeps the old plot line until its
-  // authored props are re-sited, because correcting it here measured worse.
-  const blocks = blocksFromGrid(avenues, streets, { seed: town.seed, verge: false })
+  // Paved inset, same as every other district. Village props (farmsteads,
+  // halt shelter, milestones) are sited off this lattice further down, so
+  // correcting the plot line no longer walks people into those solids.
+  const blocks = blocksFromGrid(avenues, streets, { seed: town.seed })
   // The market place is the block at the crossroads, left unbuilt and paved.
   let market: BlockRect | null = null
   let closest = Number.POSITIVE_INFINITY
@@ -3543,20 +3749,23 @@ function addCircuitTown(root: THREE.Group, trees: TreeRecord[], town: TownPlan, 
     paving.castShadow = false
     root.add(paving)
     const civic = createCourthouse(town.seat ? .74 : .44, definition.stone)
-    civic.position.set(market.x, .06, market.z - market.depth * .26)
+    civic.position.set(market.x, .06, market.z - market.depth * .22)
     root.add(civic)
     const cross = createMarketStall(town.seed)
-    cross.position.set(market.x + market.width * .22, .07, market.z + market.depth * .24)
+    // Centre of the square, clear of the north walk that the crowd actually uses.
+    cross.position.set(market.x + market.width * .08, .07, market.z - market.depth * .02)
     markSolidProp(cross, .5)
     root.add(cross)
     for (const side of [-1, 1]) {
       const lamp = createLamp()
-      lamp.position.set(market.x + side * market.width * .38, .07, market.z + market.depth * .3)
+      lamp.position.set(market.x + side * market.width * .32, .07, market.z - market.depth * .18)
+      markAuthoredProp(lamp, .18)
       root.add(lamp)
     }
     const marketWalk = market.z + market.depth * .34
     footWays(root).push({
       points: [[market.x - market.width * .4, marketWalk], [market.x + market.width * .4, marketWalk]],
+      halfWidth: .2,
     })
   }
 
@@ -3866,29 +4075,56 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   }
 
   /* --- The fixed things, sited and claimed first -------------------------- */
+  // Town grids sit off the turnpike. Authored props that used to rest on their
+  // outer pavements are why correcting the village plot line used to measure
+  // worse: buildings stepped back, the crowd's obstacle set changed, and
+  // walkers walked into barns. These pads are the paved block plus a yard.
+  const townPads = CIRCUIT_TOWNS.map((town) => ({
+    x: town.x,
+    z: town.z,
+    halfX: 2.4 + town.size * 1.95 + streetHalfPaved('collector'),
+    halfZ: 2.0 + town.size * 1.6 + streetHalfPaved('collector'),
+  }))
+  const overlapsTown = (x: number, z: number, radius: number) =>
+    townPads.some((town) => Math.abs(x - town.x) < town.halfX + radius && Math.abs(z - town.z) < town.halfZ + radius)
+
   // Farmsteads are chosen here rather than where they are built, because the
   // field system and the gate pass both have to know the yards are coming.
   const farmSites = ([
-    { s: townS[0] - 6.6, side: -1, seed: 61 },
-    { s: townS[0] + 4.6, side: 1, seed: 137 },
-    { s: townS[1] + 5.8, side: -1, seed: 211 },
-    { s: townS[2] - 4.4, side: 1, seed: 307 },
-  ] as Array<{ s: number; side: 1 | -1; seed: number }>)
+    { s: townS[0] - 7.4, side: -1 as const, seed: 61 },
+    { s: townS[0] + 6.2, side: 1 as const, seed: 137 },
+    { s: townS[1] + 7.2, side: -1 as const, seed: 211 },
+    { s: townS[2] - 6.0, side: 1 as const, seed: 307 },
+  ])
     .map((site) => {
-      const room = Math.min(
-        backLaneReach(site.s, site.side) - 1.5,
-        site.side > 0 ? railReach(site.s) - 1.5 : Number.POSITIVE_INFINITY,
+      const roomAt = (s: number) => Math.min(
+        backLaneReach(s, site.side) - 1.5,
+        site.side > 0 ? railReach(s) - 1.5 : Number.POSITIVE_INFINITY,
       )
-      const yardD = Math.min(room, site.side < 0 ? 3.2 : 4.4)
-      const [x, z] = corridor.at(site.s, yardD * site.side)
-      return { ...site, yardD, x, z }
+      let s = site.s
+      const preferred = Math.max(FARMSTEAD_YARD_CLEAR + .2, site.side < 0 ? 3.8 : 5.2)
+      let yardD = Math.min(roomAt(s), preferred)
+      let [x, z] = corridor.at(s, yardD * site.side)
+      const radius = FARMSTEAD_SOLID
+      if (overlapsTown(x, z, radius)) {
+        const nearest = townS.reduce((best, centre) => Math.abs(s - centre) < Math.abs(s - best) ? centre : best, townS[0])
+        const away = s >= nearest ? 1 : -1
+        for (let step = 1; step <= 10 && overlapsTown(x, z, radius); step += 1) {
+          s = site.s + away * step * .85
+          yardD = Math.min(roomAt(s), preferred + step * .25)
+          ;[x, z] = corridor.at(s, yardD * site.side)
+        }
+      }
+      return { ...site, s, yardD, x, z }
     })
     .filter((site) => (
       site.s > 1.6 && site.s < corridor.length - 1.6
-      && site.yardD > 2.5
+      // Entire disc off the paving, not the old 2.5-vs-2.2 keep-filter.
+      && site.yardD - VILLAGE_FOOTWAY_MID > FARMSTEAD_SOLID + VILLAGE_FOOTWAY_HALF + FARMSTEAD_YARD_MARGIN
       && !inVoid(site.s, site.side, 1.8)
       && !isReserved(site.x, site.z, reserved, 1.4)
-      && claim(site.x, site.z, 2.5)
+      && !overlapsTown(site.x, site.z, FARMSTEAD_SOLID)
+      && claim(site.x, site.z, FARMSTEAD_SOLID + .3)
     ))
 
   // The greens themselves are kept clear by `inVoid`, which the field system,
@@ -3977,11 +4213,13 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
       // A gate where the track leaves the road, set in the field boundary.
       if (claimAt(street.s, 1.72 * street.side, 1.05)) {
         const [gx, gz] = corridor.at(street.s, 1.72 * street.side)
-        const [tx, tz] = corridor.tangent(street.s)
-        const gate = tagProp(createFieldGate(.4), `track-gate-${index}`, .9)
-        gate.position.set(gx, .03, gz)
-        gate.rotation.y = Math.atan2(tx, tz) + Math.PI / 2
-        root.add(gate)
+        if (!overlapsTown(gx, gz, 1.1)) {
+          const [tx, tz] = corridor.tangent(street.s)
+          const gate = tagProp(createFieldGate(.4), `track-gate-${index}`, .9)
+          gate.position.set(gx, .03, gz)
+          gate.rotation.y = Math.atan2(tx, tz) + Math.PI / 2
+          root.add(gate)
+        }
       }
     }
     if (hashUnit(index * 17.3) < .55) {
@@ -3996,15 +4234,10 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     seed: 5507,
     lotMin: 1.15,
     lotMax: 2.5,
-    // The gradient that makes a village a village: a metre off the kerb in the
-    // middle of one, a front garden's depth more by the time the last cottage
-    // gives way to the first field. The range used to be three times this,
-    // which — combined with the near-total vacancy out in the country — meant
-    // the handful of buildings that did survive stood at four unrelated
-    // distances from a road that was itself wandering. Two variables both
-    // wandering is what "erratic" looks like; the road is straight now and the
-    // building line only breathes.
-    setback: (s) => 1.15 + (1 - village(s)) * 1.4,
+    // The gradient that makes a village a village: just clear of the paving
+    // (and a walker's beam) in the middle of one, a front garden's depth more
+    // by the time the last cottage gives way to the first field.
+    setback: (s) => 1.32 + (1 - village(s)) * 1.25,
     // Constant depth, so a village street has a back line as well as a front
     // one and the plots behind it are plots rather than leftovers.
     depth: () => 1.28,
@@ -4269,17 +4502,10 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
       }
     }
     // Pavement in the villages is where the few people out here actually walk.
-    //
-    // Deliberately still handed over with no `halfWidth`, so it inherits
-    // `CROWD_FOOTWAY_HALF`, even though the paving laid above is only .61
-    // across and .65 either side of this line is nearly twice that. Declaring
-    // the paved figure here is the obvious repair and it measured worse:
-    // .5203 -> .5287 walkers-in-any-solid over 900 frames, because the cut
-    // reads `halfWidth` too, a narrower way puts both its kerbs inside the
-    // frontage that lines it, and the village lanes were then cut back until
-    // the crowd redistributed onto the planned-street pavements that run past
-    // the farmsteads. The width these people actually get is decided by
-    // `cutFootwaysAroundSolids`, against what is standing there.
+    // Half-width is the paving itself (IN..OUT), not `CROWD_FOOTWAY_HALF`. The
+    // wider default walked people through cottages and then, once those were
+    // cut, dumped them onto the town-grid pavements that ran through farmyards.
+    // Props are sited off this band; the band is not widened to swallow them.
     townS.forEach((centre) => {
       const from = Math.max(.6, centre - 3.2)
       const to = Math.min(corridor.length - .6, centre + 3.2)
@@ -4287,7 +4513,10 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
       for (let step2 = 0; step2 <= 8; step2 += 1) {
         points.push(corridor.at(from + (to - from) * (step2 / 8), VILLAGE_FOOTWAY_MID * side))
       }
-      footWays(root).push({ points })
+      footWays(root).push({
+        points,
+        halfWidth: (VILLAGE_FOOTWAY_OUT - VILLAGE_FOOTWAY_IN) / 2,
+      })
     })
   }
 
@@ -4318,6 +4547,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
   const deck = box([2.5, .2, 2.35], stoneMaterial, [fordX, .17, fordZ])
   deck.rotation.y = bridgeRotation
   root.add(deck)
+  registerBridge(root, fordX, fordZ, 1.85, .27)
   for (const side of [-1, 1] as const) {
     const [px, pz] = corridor.at(sFord, 1.12 * side)
     const parapet = box([2.55, .38, .2], material(0x8f8779, .96), [px, .38, pz])
@@ -4460,7 +4690,7 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     // Barn, yard rail and implement are one group, so the audit treats the
     // farmstead as the single working unit it is rather than as three props
     // that keep being reported for standing next to each other.
-    const farmstead = createFarmstead(.66)
+    const farmstead = createFarmstead(FARMSTEAD_SCALE)
     farmstead.position.set(site.x, .04, site.z)
     farmstead.rotation.y = facing + Math.PI / 2
     /*
@@ -4489,15 +4719,17 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
     implement.position.set(.6, -.01, .95)
     implement.rotation.y = .8
     farmstead.add(implement)
-    tagProp(farmstead, `farmstead-${index}`, 1.5)
+    tagProp(farmstead, `farmstead-${index}`, FARMSTEAD_SOLID)
     root.add(farmstead)
     if (claimAt(site.s, 1.72 * site.side, 1.05)) {
       const [gx, gz] = corridor.at(site.s, 1.72 * site.side)
-      const [tx, tz] = corridor.tangent(site.s)
-      const gate = tagProp(createFieldGate(.4), `farm-gate-${index}`, .9)
-      gate.position.set(gx, .03, gz)
-      gate.rotation.y = Math.atan2(tx, tz) + Math.PI / 2
-      root.add(gate)
+      if (!overlapsTown(gx, gz, 1.1)) {
+        const [tx, tz] = corridor.tangent(site.s)
+        const gate = tagProp(createFieldGate(.4), `farm-gate-${index}`, .9)
+        gate.position.set(gx, .03, gz)
+        gate.rotation.y = Math.atan2(tx, tz) + Math.PI / 2
+        root.add(gate)
+      }
     }
     if (index === 0) {
       registerLandmark(root, {
@@ -4510,14 +4742,17 @@ function addNationCorridor(root: THREE.Group, route: THREE.Curve<THREE.Vector3>,
 
   /* --- Where each village begins ------------------------------------------ */
   townS.forEach((centre, index) => {
+    const clearAlong = 2.4 + CIRCUIT_TOWNS[index].size * 1.95 + 1.15
+    const verge = MILESTONE_VERGE
     for (const direction of [-1, 1]) {
-      const s = centre + direction * 3.6
+      const s = centre + direction * clearAlong
       if (s < 1 || s > corridor.length - 1) continue
       const side: 1 | -1 = direction > 0 ? 1 : -1
       if (onReserved(s, side, 1.6) || onFord(s)) continue
-      if (!claimAt(s, 1.5 * side, .6)) continue
-      const [mx, mz] = corridor.at(s, 1.5 * side)
-      const stone = tagProp(createMilestone(.95), `milestone-${index}-${direction > 0 ? 'e' : 'w'}`, .24)
+      if (!claimAt(s, verge * side, .6)) continue
+      const [mx, mz] = corridor.at(s, verge * side)
+      if (overlapsTown(mx, mz, .4)) continue
+      const stone = tagProp(createMilestone(.95), `milestone-${index}-${direction > 0 ? 'e' : 'w'}`, MILESTONE_SOLID)
       stone.position.set(mx, .03, mz)
       stone.rotation.y = corridor.facing(s, side)
       root.add(stone)
@@ -4607,6 +4842,7 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
     // had the river passing through it rather than under it.
     const bridge = box([1.6, .2, 2.6], material(0x7a766d, .95), [town.x, .19, -13.3])
     root.add(bridge)
+    registerBridge(root, town.x, -13.3, 1.7, .29)
   }
 
   // Worked land beyond the corridor's own field system: the water meadows past
@@ -4702,29 +4938,14 @@ function addNationEnvironment(root: THREE.Group, definition: ArcDefinition, rout
  */
 const LEVEL_CROSSING_GATE = 3.4
 /**
- * The Treaty Sea: open water, one vessel, and the three islands the career
- * itself stands on.
+ * The Treaty Sea: open water, a working channel, and enough furniture to read
+ * as a place — buoys on the circuit, lighthouse islands, piers on the career
+ * parcels, and three distinct hulls (ferry, trawler, skiff).
  *
- * This region used to be a harbour — five quay islands with warehouses, cranes,
- * cargo and bollards, five more carrying lighthouses and planting, seven outer
- * islands with villages and jetties, an embassy, thirty-two channel buoys and a
- * fleet of nine boats. None of it was doing the work a district's furniture is
- * supposed to do, because there is no ground out here to stand on and nothing
- * for a quay to serve: what the player actually sees from a sea district is
- * water, weather, and whatever is moving on it. Everything else was scenery
- * competing with the one thing worth looking at.
- *
- * So the sea is a sea. The swell and the vessel's Kelvin wake are in
- * `map-water`, and the only thing built here is the route the vessel runs.
- *
- * A standing circuit rather than a channel with portals at either end. The
- * channel version was the honest model of a working harbour — come in from
- * somewhere, tie up, leave again — but with one boat and no harbour left for it
- * to call at, all it produced was a vessel that crossed the bay and then was
- * not there for a while, which is precisely the appearing and vanishing this
- * region was asked to stop doing. A closed lane has no ends to leave by, so the
- * boat is simply always out there. It is set wide of the career route and of
- * all three island parcels, so the swimmer's line and the vessel's never meet.
+ * This region used to be a harbour of five quay islands, thirty-two buoys and
+ * nine boats. That density was scenery competing with the water. The rebuild
+ * keeps the sea a sea, and puts flavor back on the landforms and the shipping
+ * lane rather than restoring the old floating warehouse ring.
  */
 function addOceanEnvironment(root: THREE.Group) {
   // Sampled rather than listed so the turns are genuinely circular: a boat
@@ -4790,6 +5011,49 @@ function addOceanEnvironment(root: THREE.Group) {
   for (const [key, name, kind, position, radius, detail] of sea) {
     registerLandmark(root, { key, name, kind, detail, position, radius })
   }
+
+  const CIRCUIT_BUOYS = 12
+  for (let index = 0; index < CIRCUIT_BUOYS; index += 1) {
+    const angle = index / CIRCUIT_BUOYS * Math.PI * 2 + .18
+    const buoy = createBuoy([0xb47b45, 0xc45a3a, 0x3a6b8a][index % 3], .68)
+    buoy.position.set(Math.cos(angle) * 20.4, .02, Math.sin(angle) * 12.15)
+    root.add(buoy)
+  }
+
+  const extraLand: Array<[number, number, number]> = [
+    [18.4, 8.1, 910],
+    [-19.1, -6.3, 911],
+    [12.6, -10.6, 912],
+    [-7.2, 10.8, 913],
+  ]
+  extraLand.forEach(([x, z, seed], index) => {
+    const island = createIslandLandform(1.55, seed, index % 2 ? 0x66725e : 0x707666)
+    island.position.set(x, OCEAN_LANDFORM_PLACE_Y, z)
+    root.add(island)
+    const light = createLighthouse(.48)
+    light.position.set(x, OCEAN_LANDFORM_TOP, z)
+    root.add(light)
+    const pier = createPier(2.1, .42)
+    pier.position.set(x + (index === 1 ? 1.4 : -1.35), -.01, z + .4)
+    pier.rotation.y = index === 1 ? Math.PI / 2 : -Math.PI / 2
+    root.add(pier)
+    const cargo = createCargoStack(seed % 9, .32)
+    cargo.position.set(x + (index === 1 ? .55 : -.5), .04, z + .15)
+    root.add(cargo)
+    if (index === 0 || index === 3) {
+      const skiff = createSkiff()
+      skiff.position.set(x - 2.0, .02, z + .55)
+      skiff.rotation.y = -Math.PI / 2
+      root.add(skiff)
+    }
+  })
+  const trawler = createTrawler()
+  trawler.scale.setScalar(.7)
+  trawler.userData.seaCircuit = { rx: 16.8, rz: 9.4, speed: .09, phase: 1.2 }
+  // Off the origin (and inside the swim/ferry circuit) so the first frame is
+  // already on the water rather than at the map centre.
+  trawler.position.set(Math.cos(1.2) * 16.8, .04, Math.sin(1.2) * 9.4)
+  root.add(trawler)
 }
 
 /**
@@ -5098,6 +5362,7 @@ function addContinentEnvironment(root: THREE.Group, route: THREE.Curve<THREE.Vec
   for (const offset of [-.62, .62]) {
     root.add(box([.16, .3, 3.4], material(0x847c6c, .92), [offset, .35, 16.2]))
   }
+  registerBridge(root, 0, 16.2, 2.6, .32)
   registerLandmark(root, { key: 'continent-river', name: 'The Concord Water', kind: 'water', detail: 'The river the Arc was laid out from. One monumental span carries the south avenue across it; everything else stops at the embankment.', position: [0, 16.2], radius: 3 })
 
   // The commercial cluster, deliberately outside the ring, where a capital
@@ -6868,9 +7133,9 @@ function decorateLevelParcel(
     // chambers, curb activity, trees and deliveries make each level a block.
     for (const direction of [-1, 1]) {
       const annex = createBlockBuilding(1.32 + (index % 2) * .14, 1.25 + ((point.data.tier + (direction > 0 ? 1 : 0)) % 3) * .36, 1.38, [0x665b50, 0x746354, 0x59615e][(index + (direction > 0 ? 1 : 0)) % 3], false)
-      addAt(annex, direction * 2.18, -.42)
+      addAt(annex, direction * 2.85, 0)
     }
-    addAt(createParkedDeliveryBay(point.data.tier, .68), 1.66, 1.74, -Math.atan2(tangent.z, tangent.x))
+    addAt(createParkedDeliveryBay(point.data.tier, .62), .48, 2.18, -Math.atan2(tangent.z, tangent.x))
     const parkedCar = createVehicle(point.data.tier % 2 ? 0x53646a : 0x6f5a4e)
     parkedCar.scale.setScalar(.74)
     addAt(parkedCar, -.45, 1.82, -Math.atan2(tangent.z, tangent.x))
@@ -6894,11 +7159,10 @@ function decorateLevelParcel(
     bench.userData.propAudit = { name: `nation-court-bench-${index}`, region: 'nation' }
     addAt(bench, 2.4, 1.5, facing + Math.PI)
   } else if (region === 'ocean') {
-    // A headquarters out here stands on its own island, so what belongs beside
-    // it is the shore it stands on — the marsh in the lee — and not a moored
-    // workboat and a stack of containers floating on open water beside it.
     const marsh = createMarshPatch(220 + point.data.tier, .58)
     addAt(marsh, index % 2 ? -1.15 : 1.15, -.35)
+    addAt(createCargoStack(point.data.tier + 7, .32), index % 2 ? 1.15 : -1.15, .55)
+    addAt(createCargoStack(point.data.tier + 11, .26), index % 2 ? .85 : -.85, 1.38)
   } else if (region === 'continent') {
     // A true mirrored pair (same seed, same height, opposite side) reads as
     // a formal flanking wing; the previous per-direction height and dark,
@@ -7036,7 +7300,9 @@ function addAuthoredDetailPass(root: THREE.Group, region: MapRegionKey, route: T
       })
     const shelter = createTransitShelter(.82, 0x6f8d78)
     shelter.userData.propAudit = { name: 'nation-halt-shelter', region: 'nation' }
-    place(shelter, 1.4, 8.35, Math.PI, 3)
+    // Same off-paving rule as the farmsteads: solid 1.05, station-lane footway
+    // half 0.15 at x≈0.35. 3.15 − 0.35 = 2.8 > 1.05 + 0.15 + 0.22.
+    place(shelter, 3.15, 8.35, Math.PI, 3)
     ;[[-16.5, 12.4, .08], [16.5, 12.4, -.08]].forEach(([x, z, rotation], index) => {
       const outlier = createFarmstead(.68)
       outlier.userData.propAudit = { name: `nation-outfarm-${index}`, region: 'nation' }
@@ -7261,7 +7527,71 @@ function createFerry() {
   group.add(box([1.1, .52, .8], material(0xe0d8c2, .75), [0, .65, 0]))
   group.add(box([.78, .22, .7], material(0x49696f, .34, .18), [0, .94, 0]))
   markVehicleHull(group, 1.25, .85, 'ferry', 1.05)
+  tagSeaCraft(group, { restY: -.02, heave: .078, phase: 0.4 })
   return attachWake(group, 1.15)
+}
+
+/** Open timber workboat: short, low freeboard, one thwart — not a scaled ferry. */
+function createSkiff() {
+  const group = new THREE.Group()
+  const timber = material(0x6a5340, .92)
+  const dark = material(0x2c2a26, .7)
+  const hull = mesh(new THREE.CylinderGeometry(.22, .38, 1.55, 6), timber, [0, .08, 0])
+  hull.rotation.z = Math.PI / 2
+  hull.rotation.y = Math.PI / 2
+  group.add(hull)
+  group.add(box([1.28, .07, .42], dark, [0, .16, 0]))
+  group.add(box([.08, .16, .4], timber, [.12, .22, 0]))
+  group.add(box([.22, .12, .16], material(0x3a3f40, .5, .22), [-.62, .2, 0]))
+  markVehicleHull(group, .82, .28, 'skiff', .42)
+  tagSeaCraft(group, { restY: .02, heave: .038, phase: 2.4, moored: true })
+  return group
+}
+
+/** Beamier working hull: high bow, wheelhouse aft, mast — reads as a trawler. */
+function createTrawler() {
+  const group = new THREE.Group()
+  const rust = material(0x8a4a38, .78, .08)
+  const cream = material(0xd8d0bc, .72)
+  const tar = material(0x2a2e30, .55, .16)
+  const hull = mesh(new THREE.CylinderGeometry(.72, 1.05, 3.15, 6), rust, [0, .22, 0])
+  hull.rotation.z = Math.PI / 2
+  hull.rotation.y = Math.PI / 2
+  group.add(hull)
+  group.add(box([2.4, .22, 1.15], tar, [-.15, .38, 0]))
+  group.add(box([.95, .72, .88], cream, [-.85, .82, 0]))
+  group.add(box([.7, .22, .7], tar, [-.85, 1.22, 0]))
+  group.add(cylinder(.04, 1.55, tar, [.55, 1.15, 0], 8))
+  group.add(box([.55, .06, .08], material(0xc9b48a, .65), [.55, 1.72, 0]))
+  group.add(box([.9, .28, .7], material(0x4d5c58, .62), [.35, .58, 0]))
+  markVehicleHull(group, 1.65, .95, 'trawler', 1.35)
+  tagSeaCraft(group, { restY: .04, heave: .095, phase: 1.15 })
+  return attachWake(group, 1.35)
+}
+
+type SeaCraftData = { restY: number; heave: number; phase: number; moored?: boolean; restYaw?: number }
+
+function tagSeaCraft(object: THREE.Object3D, data: SeaCraftData) {
+  object.userData.seaCraft = data
+  return object
+}
+
+/**
+ * Coupled heave, delayed pitch, out-of-phase roll. Cheap two-term swell, not
+ * a wave sim: the bow still climbs after the crest has passed amidships.
+ */
+function poseSeaCraft(object: THREE.Object3D, elapsed: number) {
+  const data = object.userData.seaCraft as SeaCraftData | undefined
+  if (!data || !object.visible) return
+  const t = elapsed * 1.08 + data.phase
+  const swell = Math.sin(t)
+  const chop = Math.sin(t * 1.73 + .4)
+  object.position.y = data.restY + swell * data.heave + chop * data.heave * .28
+  object.rotation.x = Math.sin(t - .55) * (data.moored ? .04 : .082) + Math.sin(t * 1.73 - .35) * .016
+  object.rotation.z = Math.sin(t * .71 + 1.1) * (data.moored ? .028 : .052) + Math.sin(t * 1.41) * .012
+  const yaw = Math.sin(t * .83 + .6) * (data.moored ? .018 : .028)
+  const heading = data.moored ? (data.restYaw ??= object.rotation.y) : object.rotation.y
+  object.rotation.y = heading + yaw
 }
 
 function createOrbitalCraft() {
@@ -8071,13 +8401,16 @@ export function MapThreeScene({
     const buildStartedAt = performance.now()
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     const constrainedDevice = (navigator.hardwareConcurrency || 8) <= 4
-    // Matches the office scene: render at up to 2x instead of upscaling a
-    // ~1.35x buffer onto a 3x display, which read as blurry.
-    const renderPixelRatio = Math.min(
+    // First paint at 1x so the district is interactive before the drawing
+    // buffer is doubled. The steady cap is already below the device ratio;
+    // going further on boot is what stops the map sitting as a still while
+    // the compositor waits on a 2x target.
+    const steadyPixelRatio = Math.min(
       window.devicePixelRatio || 1,
-      constrainedDevice ? 1.5 : 2,
+      constrainedDevice ? 1.25 : 1.5,
     )
-    renderer.setPixelRatio(renderPixelRatio)
+    let pixelRatioSettled = false
+    renderer.setPixelRatio(1)
     renderer.setSize(host.clientWidth, host.clientHeight, false)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -8120,6 +8453,7 @@ export function MapThreeScene({
       // it, so the same cost buys nothing.
       occlusionRadius: 1.15,
       occlusionTint: definition.occlusion.tint,
+      samples: constrainedDevice ? 1 : 2,
     })
 
     const scene = new THREE.Scene()
@@ -8144,7 +8478,7 @@ export function MapThreeScene({
     // held roughly constant by growing the map with the frustum, and the
     // shadow map is rendered once (see renderer.shadowMap.autoUpdate), so the
     // larger map costs memory rather than frame time.
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(constrainedDevice ? 512 : 1024, constrainedDevice ? 512 : 1024)
     sun.shadow.camera.left = -52; sun.shadow.camera.right = 52; sun.shadow.camera.top = 44; sun.shadow.camera.bottom = -44
     sun.shadow.camera.far = 260
     sun.shadow.bias = -.0006
@@ -8167,12 +8501,19 @@ export function MapThreeScene({
     const fill = new THREE.DirectionalLight(definition.fill.color, definition.fill.intensity)
     fill.position.set(...definition.fill.position)
     scene.add(fill)
-    const rim = new THREE.DirectionalLight(definition.rim.color, definition.rim.intensity)
-    rim.position.set(...definition.rim.position)
-    scene.add(rim)
-    const civicGlow = new THREE.PointLight(0xffcc83, region === 'orbit' ? 7.5 : 5.2, 25, 1.8)
-    civicGlow.position.set(1.5, 5.8, -5.5)
-    scene.add(civicGlow)
+    // Declared in this scope on purpose. A previous pass created the light
+    // inside the `if` and then pulsed `civicGlow.intensity` from `animate`,
+    // which is a ReferenceError on every machine — the first compiled frame
+    // drew, the first tick threw, and every map sat as a still photograph.
+    let civicGlow: THREE.PointLight | null = null
+    if (!constrainedDevice) {
+      const rim = new THREE.DirectionalLight(definition.rim.color, definition.rim.intensity)
+      rim.position.set(...definition.rim.position)
+      scene.add(rim)
+      civicGlow = new THREE.PointLight(0xffcc83, region === 'orbit' ? 7.5 : 5.2, 25, 1.8)
+      civicGlow.position.set(1.5, 5.8, -5.5)
+      scene.add(civicGlow)
+    }
 
     const world = new THREE.Group()
     scene.add(world)
@@ -8322,7 +8663,7 @@ export function MapThreeScene({
       if (planned.moved > .05) clearAuthoredParcel(world, asked, parcelRadius)
       if (region === 'ocean') {
         const island = createIslandLandform(2.1, 410 + point.data.tier * 23, index % 2 ? 0x66725e : 0x707666)
-        island.position.set(site.x, -.22, site.z)
+        island.position.set(site.x, OCEAN_LANDFORM_PLACE_Y, site.z)
         world.add(island)
         const pier = createPier(2.75, .56)
         pier.position.copy(site).lerp(roadPoint, .52)
@@ -8464,7 +8805,7 @@ export function MapThreeScene({
     const groundMarker = (x: number, z: number, radius: number, seed: number, forContact = false) => {
       if (region !== 'ocean') return
       const island = createIslandLandform(radius, seed, 0x66725e)
-      island.position.set(x, -.22, z)
+      island.position.set(x, OCEAN_LANDFORM_PLACE_Y, z)
       // Distinguishable from the landforms the region itself lays down, because
       // a landmark audit has to be able to ask "is this district sitting on a
       // rival's island" without its own contact's footing answering yes.
@@ -8841,6 +9182,7 @@ export function MapThreeScene({
      */
     const graphSpec: RoadGraphSpec = { ways: (world.userData.roadWays ?? []) as RoadGraphSpec['ways'], weldRadius: .9 }
     const roadGraph: RoadGraph | null = graphSpec.ways.length ? buildRoadGraph(graphSpec) : null
+    if (roadGraph && region !== 'ocean' && region !== 'orbit') placePortalTunnels(world, roadGraph)
 
     /*
      * The prop pass is off, on the evidence.
@@ -8932,7 +9274,9 @@ export function MapThreeScene({
       // now a property of the district: the Old Quarter is busy, the Circuit
       // is a country road with a bypass on it, and the harbour runs a handful
       // of working boats.
-      const roadPool = region === 'city' ? 16 : region === 'continent' ? 15 : region === 'nation' ? 11 : 0
+      const roadPool = constrainedDevice
+        ? (region === 'city' ? 8 : region === 'continent' ? 7 : region === 'nation' ? 5 : 0)
+        : (region === 'city' ? 16 : region === 'continent' ? 15 : region === 'nation' ? 11 : 0)
       if (roadPool && roadGraph.edgesByKind.road.length) {
         for (let index = 0; index < roadPool; index += 1) {
           // Every third vehicle on The Circuit is a tractor. A country road is
@@ -8943,6 +9287,7 @@ export function MapThreeScene({
             ? createFarmTractor(index)
             : createVehicle([0x6d4d48, 0x52626a, 0x71664f, 0x455e59, 0x7a6a52][index % 5])
           vehicle.visible = false
+          vehicle.userData.mapTraffic = true
           world.add(vehicle)
           pooledVehicles.push(vehicle)
         }
@@ -8986,6 +9331,7 @@ export function MapThreeScene({
           const boat = createFerry()
           boat.scale.multiplyScalar(.62)
           boat.visible = false
+          boat.userData.mapTraffic = true
           world.add(boat)
           boats.push(boat)
         }
@@ -9204,7 +9550,11 @@ export function MapThreeScene({
     // nothing outside `map-three-scene` reads the crowd. Districts, retainers
     // and standing are keyed on landmarks, and no landmark is a walker.
     const walkerCount = crowdWays.length && region !== 'ocean'
-      ? (region === 'city' ? 18 : region === 'continent' ? 14 : 9)
+      ? (region === 'city'
+        ? (constrainedDevice ? 10 : 42)
+        : region === 'continent'
+          ? (constrainedDevice ? 8 : 18)
+          : (constrainedDevice ? 6 : 12))
       : 0
     const crowdWalkers: CrowdWalker[] = []
     for (let index = 0; index < walkerCount; index += 1) {
@@ -9224,8 +9574,9 @@ export function MapThreeScene({
         rigs: crowdWalkers,
         width: CROWD_FOOTWAY_HALF * 2,
         lift: .1,
-        animateWithin: 30,
-        cullRadius: 90,
+        groundY: (x, z) => counselGroundY(world, x, z),
+        animateWithin: constrainedDevice ? 18 : 30,
+        cullRadius: constrainedDevice ? 55 : 90,
         occupancy: .82,
         // Everything already carrying a footprint for the placement audit is
         // also something a person has to walk round. Collecting them here
@@ -9424,10 +9775,21 @@ export function MapThreeScene({
       const fromT = closestRoutePoint(from)
       const toT = closestRoutePoint(to)
       const points = [from.clone()]
-      const samples = Math.max(2, Math.ceil(Math.abs(toT - fromT) * 12))
+      const samples = Math.max(2, Math.ceil(Math.abs(toT - fromT) * 18))
       for (let index = 0; index <= samples; index += 1) points.push(routeCurve.getPointAt(THREE.MathUtils.lerp(fromT, toT, index / samples)))
       points.push(to.clone())
-      points.forEach((point) => { point.y = .12 })
+      const heights = points.map((point) => counselGroundY(world, point.x, point.z))
+      // A single sample on a deck used to leave its neighbours at pavement
+      // height, so CatmullRom dove through the slab at both approaches. Dilate
+      // every raised sample across its neighbours so the span is contiguous.
+      const lifted = heights.slice()
+      for (let index = 0; index < heights.length; index += 1) {
+        if (heights[index] <= .13) continue
+        for (let neighbour = Math.max(0, index - 2); neighbour <= Math.min(heights.length - 1, index + 2); neighbour += 1) {
+          lifted[neighbour] = Math.max(lifted[neighbour], heights[index])
+        }
+      }
+      points.forEach((point, index) => { point.y = lifted[index] })
       return new THREE.CatmullRomCurve3(points, false, 'centripetal', .42)
     }
     type WalkState = { curve: THREE.CatmullRomCurve3; delayMs: number; duration: number; elapsedMs: number; lastProgress: number }
@@ -9465,16 +9827,14 @@ export function MapThreeScene({
      * prevent, arrived at from the other side.
      *
      * The upper clamp has to move with it. A 25-unit crossing at swim pace
-     * wants 25s, and the 9.5s cap is what forced the speed in the first place;
-     * capped at 15.5s the trapezoid's peak lands at about 3.5x, just inside the
-     * ceiling, so the stroke covers the whole crossing. A sea crossing is now
-     * meaningfully slower than a walk of the same length, which is correct:
-     * swimming is slower than walking.
+     * wants 25s, and a 9.5s cap is what forced the walk clip past 2.2× and
+     * into skating. Long routes keep their natural clip speed; they take
+     * longer rather than sliding.
      */
     const walkDuration = (length: number) => {
       const clip = region === 'ocean' ? counsel.naturalSwimSpeed : counsel.naturalWalkSpeed
-      const pace = Math.max(.2, clip * 1.62)
-      return THREE.MathUtils.clamp((length / pace) * 1000, 1400, region === 'ocean' ? 15500 : 9500)
+      const pace = Math.max(.18, clip * 1.06)
+      return THREE.MathUtils.clamp((length / pace) * 1000, 1400, region === 'ocean' ? 24000 : 20000)
     }
     const initialDestination = destination.clone().setY(.12)
     const overviewTarget = new THREE.Vector3(...definition.target)
@@ -9604,6 +9964,7 @@ export function MapThreeScene({
         || data.waterUniforms || data.auroraUniforms || data.flagUniforms || data.mapLabelKind
         || data.mapObjectKind || data.mapEmphasisKind || data.lawyerBeacon || data.playerMarker || data.destinationMarker
         || data.buoy || data.marshBlade || data.ambientActor || data.ambientWing
+        || data.seaCircuit || data.seaCraft || data.mapTraffic || data.wake
       ) animatedObjects.push(object)
     })
 
@@ -9614,25 +9975,37 @@ export function MapThreeScene({
     // each as a boundary and the matrix freeze further down exempts the same
     // set, so the two cannot drift apart.
     const liveObjects = new Set<THREE.Object3D>()
-    animatedObjects.forEach((object) => liveObjects.add(object))
-    selectableRoots.forEach((object) => liveObjects.add(object))
-    transports.forEach(({ object }) => liveObjects.add(object))
+    const keepLive = (object: THREE.Object3D) => { liveObjects.add(object) }
+    const keepLiveTree = (object: THREE.Object3D) => {
+      object.traverse((child) => liveObjects.add(child))
+    }
+    const keepWake = (object: THREE.Object3D) => {
+      keepLive(object)
+      const wake = object.userData.wake as { arms?: THREE.Object3D[] } | undefined
+      wake?.arms?.forEach(keepLive)
+    }
+    animatedObjects.forEach(keepLive)
+    selectableRoots.forEach(keepLive)
+    transports.forEach(({ object }) => keepWake(object))
     // Pooled agents are driven by the simulations, and the crowd's two batches
     // have their instance matrices rewritten every frame, so neither may be
-    // folded into a static batch or have its own matrix frozen.
-    pooledVehicles.forEach((object) => liveObjects.add(object))
-    if (crowdRenderer) crowdRenderer.group.traverse((object) => liveObjects.add(object))
-    if (standingFigureRenderer) standingFigureRenderer.group.traverse((object) => liveObjects.add(object))
+    // folded into a static batch or have its own matrix frozen. Hull children
+    // still bake into the moving root; wake arms scale on their own.
+    pooledVehicles.forEach(keepWake)
+    harbourVessels.forEach(keepWake)
+    if (crowdRenderer) keepLiveTree(crowdRenderer.group)
+    if (standingFigureRenderer) keepLiveTree(standingFigureRenderer.group)
     // The rig animates limb by limb, so no part of it may be baked.
-    lawyer.traverse((object) => liveObjects.add(object))
-    if (transitCarrier) liveObjects.add(transitCarrier)
-    liveObjects.add(selectionRing)
-    liveObjects.add(landmarkRing)
+    keepLiveTree(lawyer)
+    if (transitCarrier) keepLiveTree(transitCarrier)
+    swimRipples.forEach(keepLive)
+    keepLive(selectionRing)
+    keepLive(landmarkRing)
     // Moved and rescaled onto whichever district is under the pointer, so its
     // matrix cannot be frozen into a batch either.
-    liveObjects.add(landmarkWash)
-    liveObjects.add(districtWash)
-    liveObjects.add(districtOutline)
+    keepLive(landmarkWash)
+    keepLive(districtWash)
+    keepLive(districtOutline)
 
     // The world is complete here; nothing below adds static scenery, so this is
     // the point at which it can be safely baked into batches.
@@ -9667,12 +10040,18 @@ export function MapThreeScene({
     })
     const viewProjection = new THREE.Matrix4()
     const cameraFrustum = new THREE.Frustum()
+    const fogHorizon = Math.min(
+      camera.far * .92,
+      -Math.log(.07) / Math.max(1e-6, definition.fogDensity),
+    )
     const updatePerformanceCulling = () => {
       camera.updateMatrixWorld()
       viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
       cameraFrustum.setFromProjectionMatrix(viewProjection)
       performanceCullables.forEach(({ object, sphere }) => {
-        const visible = cameraFrustum.intersectsSphere(sphere)
+        const inView = cameraFrustum.intersectsSphere(sphere)
+        const range = camera.position.distanceTo(sphere.center) - sphere.radius
+        const visible = inView && range < fogHorizon
         if (object.visible !== visible) object.visible = visible
       })
     }
@@ -10216,7 +10595,12 @@ export function MapThreeScene({
         updatePerformanceCulling()
         lastCullingCamera.copy(camera.position)
       }
-      civicGlow.intensity = (region === 'orbit' ? 7.5 : 5.2) + Math.sin(elapsed * .65) * .22
+      if (!pixelRatioSettled && elapsed > .35) {
+        pixelRatioSettled = true
+        renderer.setPixelRatio(steadyPixelRatio)
+        resize()
+      }
+      if (civicGlow) civicGlow.intensity = (region === 'orbit' ? 7.5 : 5.2) + Math.sin(elapsed * .65) * .22
 
       transports.forEach((transport) => {
         let t: number
@@ -10483,34 +10867,6 @@ export function MapThreeScene({
       }
       for (let index = 0; index < trafficSims.length; index += 1) trafficSims[index].update(delta, camera)
 
-      // Tell the sea what its one vessel is doing.
-      //
-      // Read off the hull's own frame-to-frame travel rather than asked of the
-      // simulation, for the same reason `attachWake` measures its own speed: the
-      // rendered position is eased through junctions, so the boat's *apparent*
-      // motion and its simulated distance-along-edge are not the same thing, and
-      // it is the apparent motion the water has to agree with.
-      if (sea && harbourVessels.length) {
-        let vessel: THREE.Object3D | null = null
-        for (const boat of harbourVessels) {
-          if (boat.visible) { vessel = boat; break }
-        }
-        if (vessel && delta > 0) {
-          const travelX = vessel.position.x - wakeLastX
-          const travelZ = vessel.position.z - wakeLastZ
-          const travelled = Math.hypot(travelX, travelZ)
-          // A fade-in that begins at the previous vessel's last position reads as
-          // one enormous jump; anything past a plausible top speed is that, not a
-          // boat, so the wake sits it out for a frame.
-          const speed = travelled > 3 * delta ? 0 : travelled / delta
-          if (travelled > 1e-4) setSeaWake(sea, vessel.position.x, vessel.position.z, travelX, travelZ, speed)
-          else setSeaWake(sea, vessel.position.x, vessel.position.z, 1, 0, 0)
-          wakeLastX = vessel.position.x
-          wakeLastZ = vessel.position.z
-        } else if (!vessel) {
-          setSeaWake(sea, 0, 0, 1, 0, 0)
-        }
-      }
       if (crowd) crowd.update(delta, camera)
       // One matrix upload for the whole population, after every walker for
       // this frame has been posed.
@@ -10522,6 +10878,7 @@ export function MapThreeScene({
       // it was built so four guards never drift into lockstep.
       if (standingFigureRenderer) {
         for (const entry of standingFigures) {
+          if (camera.position.distanceToSquared(entry.walker.root.position) > 1600) continue
           const t = elapsed * .5 + entry.phase
           entry.walker.rig.chest.rotation.y = Math.sin(t * .6) * .05
           entry.walker.rig.head.rotation.y = Math.sin(t * .35) * .22
@@ -10558,7 +10915,12 @@ export function MapThreeScene({
           object.rotation.y += delta * .008
           object.position.x = Math.sin(elapsed * .035) * .4
         }
-        if (object.userData.waterUniforms) object.userData.waterUniforms.uTime.value = elapsed
+        if (object.userData.waterUniforms) {
+          object.userData.waterUniforms.uTime.value = elapsed
+          if (object.userData.waterUniforms.uLod) {
+            object.userData.waterUniforms.uLod.value = camera.position.y > 18 || zoom > 1.85 ? 0 : 1
+          }
+        }
         if (object.userData.auroraUniforms) object.userData.auroraUniforms.uTime.value = elapsed
         if (object.userData.flagUniforms) object.userData.flagUniforms.uTime.value = elapsed
         // A contact's shingle is always in the world; the card naming the
@@ -10592,6 +10954,16 @@ export function MapThreeScene({
             if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) child.material.opacity = available ? .72 + hover * .24 + pulse * 1.3 : .22
           })
         }
+        if (object.userData.seaCircuit) {
+          const circuit = object.userData.seaCircuit as { rx: number; rz: number; speed: number; phase: number }
+          const angle = elapsed * circuit.speed + circuit.phase
+          object.position.x = Math.cos(angle) * circuit.rx
+          object.position.z = Math.sin(angle) * circuit.rz
+          const tx = -Math.sin(angle) * circuit.rx
+          const tz = Math.cos(angle) * circuit.rz
+          object.rotation.y = Math.atan2(tx, tz) - Math.PI / 2
+        }
+        if (object.userData.seaCraft) poseSeaCraft(object, elapsed)
         if (object.userData.buoy) {
           object.position.y = -.02 + Math.sin(elapsed * 1.35 + object.userData.phase) * .055
           object.rotation.z = Math.sin(elapsed * .72 + object.userData.phase) * .035
@@ -10612,6 +10984,34 @@ export function MapThreeScene({
           if (object.userData.ambientActor === 'drone') object.rotation.z = Math.sin(elapsed * 1.2 + phase) * .06
         }
       })
+      // Hulls have just been posed. Drive the sea wake from whichever body is
+      // actually underway — harbour ferry or circuit trawler — not only the
+      // ferry, and not from a hull that is still sitting at the origin.
+      if (sea) {
+        const pick: { vessel: THREE.Object3D | null } = { vessel: null }
+        const consider = (object: THREE.Object3D) => {
+          if (!object.visible) return
+          if (!pick.vessel || object.userData.seaCircuit) pick.vessel = object
+        }
+        for (const boat of harbourVessels) consider(boat)
+        animatedObjects.forEach((object) => {
+          if (object.userData.seaCircuit) consider(object)
+        })
+        const vessel = pick.vessel
+        if (vessel && delta > 0) {
+          const hull = vessel
+          const travelX = hull.position.x - wakeLastX
+          const travelZ = hull.position.z - wakeLastZ
+          const travelled = Math.hypot(travelX, travelZ)
+          const speed = travelled > 3 * delta ? 0 : travelled / delta
+          if (travelled > 1e-4) setSeaWake(sea, hull.position.x, hull.position.z, travelX, travelZ, speed)
+          else setSeaWake(sea, hull.position.x, hull.position.z, 1, 0, 0)
+          wakeLastX = hull.position.x
+          wakeLastZ = hull.position.z
+        } else if (!vessel) {
+          setSeaWake(sea, 0, 0, 1, 0, 0)
+        }
+      }
       if (landmarkRing.visible) {
         landmarkRing.scale.setScalar((hoveredLandmark?.radius ?? 1) * (1 + Math.sin(elapsed * 3.1) * .035))
         ;(landmarkRing.material as THREE.MeshBasicMaterial).opacity = .5 + Math.sin(elapsed * 3.1) * .18
@@ -10675,55 +11075,39 @@ export function MapThreeScene({
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
 
-    // Compiling this many distinct materials inside the first `render()` makes
-    // the driver link each program in turn while the main thread waits, which
-    // is the bulk of the delay before the district appears. `compileAsync`
-    // links them in parallel instead, so the first frame only has to draw.
-    void renderer.compileAsync(scene, camera).then(() => {
-      if (disposed) return
-      // Full-scene pass first: it captures the static world shadow map while
-      // every caster is still visible. Culling may only run afterwards.
-      stylePass.render(scene, camera)
-      renderer.shadowMap.needsUpdate = false
-      updatePerformanceCulling()
-      ready = true
-      // Introspection only: lets performance/QA tooling read the live scene
-      // graph and renderer stats from outside without affecting rendering.
-      const firstRenderAt = performance.now()
-      ;(window as unknown as { __mapScene?: unknown; __mapThree?: unknown }).__mapThree = THREE
-      ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
-        region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
-        // The composite itself, so its settings can be changed on a live scene
-        // and the cost of a change measured against the same district, the
-        // same crowd and the same frame, rather than against a second run of
-        // the dev server. The map's crowd population is not reproducible
-        // across server lifetimes and its frame time follows the crowd, so an
-        // A/B taken any other way measures the population as much as the code.
-        stylePass,
-        firstFrameMs: firstRenderAt - buildStartedAt,
-        roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer: standingFigureRenderer, vehicleHulls,
-        // The counsel's rig and its own feet, so "does the walk skate" can be
-        // measured — foot travel against body travel — instead of judged from a
-        // screenshot. `walkTo` drives a journey on demand, because the walk is
-        // otherwise only triggered by a player selecting a headquarters.
-        counsel, counselRig: lawyerModel.rig,
-        walkTo: (x: number, z: number, milliseconds?: number) => {
-          const target = new THREE.Vector3(x, .12, z)
-          const curve = walkingCurve(lawyer.position.clone(), target)
-          walking = {
-            curve,
-            delayMs: 0,
-            duration: milliseconds ?? walkDuration(curve.getLength()),
-            elapsedMs: 0,
-            lastProgress: 0,
-          }
-          return { length: curve.getLength(), duration: walking.duration }
-        },
-      }
-      if (!surfaceVisible || document.hidden) return
+    // First paint and the tick start now. Gating both on `compileAsync` left
+    // the district as a still (or a spinner) for the whole program-link, and
+    // a throw on the first tick then killed the loop so it never recovered.
+    stylePass.render(scene, camera)
+    renderer.shadowMap.needsUpdate = false
+    updatePerformanceCulling()
+    ready = true
+    const firstRenderAt = performance.now()
+    ;(window as unknown as { __mapScene?: unknown; __mapThree?: unknown }).__mapThree = THREE
+    ;(window as unknown as { __mapScene?: unknown }).__mapScene = {
+      region, scene, world, camera, renderer, lawyer, transports, landmarks, buildStartedAt, firstRenderAt,
+      stylePass,
+      firstFrameMs: firstRenderAt - buildStartedAt,
+      roadGraph, trafficSims, crowd, crowdRenderer, rivalGuardRenderer: standingFigureRenderer, vehicleHulls,
+      counsel, counselRig: lawyerModel.rig,
+      walkTo: (x: number, z: number, milliseconds?: number) => {
+        const target = new THREE.Vector3(x, .12, z)
+        const curve = walkingCurve(lawyer.position.clone(), target)
+        walking = {
+          curve,
+          delayMs: 0,
+          duration: milliseconds ?? walkDuration(curve.getLength()),
+          elapsedMs: 0,
+          lastProgress: 0,
+        }
+        return { length: curve.getLength(), duration: walking.duration }
+      },
+    }
+    if (surfaceVisible && !document.hidden) {
       previousFrame = performance.now()
       animationFrame = requestAnimationFrame(animate)
-    })
+    }
+    void renderer.compileAsync(scene, camera).catch(() => undefined)
 
     return () => {
       disposed = true

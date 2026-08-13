@@ -394,14 +394,18 @@ const MAX_SAMPLE_RATE = 72
 // heel strike, and at eight points there is nowhere to put that deceleration,
 // so the shin arrives at the floor still travelling and the footfall reads as
 // a slam.
-const WALK_HIP: Curve = [-25, -22, -17, -12, -7, -2, 3, 7, 10, 10, 6, -3, -14, -22, -26, -27]
+const WALK_HIP: Curve = [-28, -24, -18, -12, -6, 0, 5, 10, 13, 12, 6, -4, -16, -24, -29, -30]
 /** The double bump: a small loading-response flexion right after heel strike
  *  that absorbs the impact, then near-extension at midstance, then the large
  *  swing flexion. Without the first bump a walk reads as stilted stilts. */
-const WALK_KNEE: Curve = [5, 14, 18, 16, 12, 7, 5, 7, 12, 26, 45, 57, 62, 54, 34, 12]
-const WALK_ANKLE: Curve = [0, 6, 8, 5, 2, -2, -6, -8, -10, 2, 16, 12, 2, -1, -4, -3]
-const WALK_SHOULDER: Curve = [12, 8, 2, -8, -18, -20, -10, 3]
-const WALK_ELBOW: Curve = [-14, -12, -12, -16, -24, -28, -22, -16]
+const WALK_KNEE: Curve = [6, 16, 20, 17, 12, 7, 4, 6, 14, 30, 48, 60, 64, 55, 34, 14]
+const WALK_ANKLE: Curve = [0, 7, 9, 5, 1, -3, -7, -10, -12, 1, 18, 13, 3, -1, -4, -3]
+/** Same resolution as the legs. Eight samples made the arms hitch against the
+ *  stride — the shoulder arrived at its peak a frame late and the walk read as
+ *  a march. Opposite the leading leg, and a little more travel, so the torso
+ *  actually counters the hips instead of twitching. */
+const WALK_SHOULDER: Curve = [16, 12, 6, -2, -12, -20, -26, -28, -22, -12, -2, 8, 16, 20, 20, 18]
+const WALK_ELBOW: Curve = [-12, -12, -14, -18, -24, -30, -34, -32, -26, -20, -16, -14, -12, -12, -12, -12]
 /** Ground-contact weight for the left foot, at twice the resolution of the
  *  joint curves so heel strike can be sharp while toe-off stays gradual. */
 const WALK_CONTACT: Curve = [1, 1, 1, 1, 1, 1, 1, 1, 1, .85, .4, .08, 0, 0, .1, .45]
@@ -750,7 +754,7 @@ const CLIP_SPECS: ClipSpec[] = [
       rightElbow: { x: halfPhase(WALK_ELBOW) },
       // Pelvic transverse rotation and obliquity. The pelvis rotates the
       // swinging leg's side forward and drops on the unsupported side.
-      hips: { y: [4, 2.5, 0, -2.5, -4, -2.5, 0, 2.5], z: [0, -4, -5, -3, 0, 4, 5, 3] },
+      hips: { y: [5, 3, 0, -3, -5, -3, 0, 3], z: [0, -5, -6, -3.5, 0, 5, 6, 3.5] },
       // Thorax counter-rotation against the pelvis. Arm swing without this
       // reads as a puppet whose arms are bolted to a rigid box: in a real walk
       // the shoulder girdle actively twists opposite the hips.
@@ -765,8 +769,8 @@ const CLIP_SPECS: ClipSpec[] = [
       // Two rise-and-fall cycles per gait cycle, with the trough just after
       // each heel strike: that dip is the body absorbing the landing, and its
       // absence is why the old walk floated.
-      y: [-.014, -.024, -.014, .008, .022, .018, .006, -.010, -.014, -.024, -.014, .008, .022, .018, .006, -.010],
-      x: [0, -.021, -.030, -.021, 0, .021, .030, .021],
+      y: [-.016, -.028, -.016, .010, .026, .020, .006, -.012, -.016, -.028, -.016, .010, .026, .020, .006, -.012],
+      x: [0, -.026, -.036, -.026, 0, .026, .036, .026],
     },
     // Stance runs from heel strike to toe off, a little over 60% of the cycle
     // per foot, which is what gives a walk its two double-support windows. The

@@ -385,3 +385,8 @@
 @media (max-width: 640px) {
   .practice-lab .run-queue-item:hover { translate: none; }
 }
+
+.practice-lab[data-deck-demo='mega'] .practice-action,
+.practice-lab[data-deck-demo='mega'] .practice-guide { display: none; }
+.practice-lab[data-deck-demo='mega'] .practice-tabs { margin-bottom: 4px; }
+.practice-lab[data-deck-demo='mega'] .mega-panel { box-shadow: 0 0 0 1px rgba(240, 210, 127, .28), 0 22px 48px rgba(5, 9, 15, .38); }

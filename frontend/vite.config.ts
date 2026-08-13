@@ -671,8 +671,80 @@ function openWithAPlate(): Plugin {
   }
 }
 
+/**
+ * Same cascade placement as `lsat-route-stylesheets`, for the dev server.
+ *
+ * The build plugin needs a Rollup bundle, so it cannot run in serve. Vite then
+ * injects each imported sheet as a `<style data-vite-dev-id>` when the module
+ * loads, which puts every route sheet *after* `styles.css` and `mobile.css` —
+ * the opposite of production, and the reason a phone layout that `mobile.css`
+ * used to win would lose to `office-page.css` on 5174. This script watches
+ * `<head>` and slots those tags the way a cold production load would, without
+ * touching HMR (the same style node is moved, not replaced).
+ */
+function routeStylesheetsDev(): Plugin {
+  return {
+    name: 'lsat-route-stylesheets-dev',
+    apply: 'serve',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        const script = `(function(){try{
+var B=${JSON.stringify(SHEET_ORDER)};
+function idOf(n){return String(n.getAttribute('data-vite-dev-id')||n.getAttribute('href')||'').split('?')[0].replace(/\\\\/g,'/');}
+function isMobileRoute(id){return /\\/src\\/mobile\\/[^/]+\\.css$/.test(id);}
+function isEntry(id){return /\\/src\\/styles\\.css$/.test(id);}
+function isMobileEntry(id){return /\\/src\\/mobile\\.css$/.test(id);}
+function rank(id){for(var i=0;i<B.length;i++){if(id.endsWith('/'+B[i])||id.endsWith(B[i]))return i;}return -1;}
+function nodes(){return document.head.querySelectorAll('style[data-vite-dev-id],link[rel="stylesheet"]');}
+function find(pred){var L=nodes();for(var i=0;i<L.length;i++){if(pred(idOf(L[i])))return L[i];}return null;}
+function slot(n){
+  if(!n||!n.getAttribute)return;
+  if(n.tagName!=='STYLE'&&!(n.tagName==='LINK'&&n.rel==='stylesheet'))return;
+  var id=idOf(n);
+  if(isMobileRoute(id)){
+    var m=find(isMobileEntry)||find(isEntry);
+    if(!m)return;
+    var ref=m.nextSibling,all=nodes();
+    for(var i=0;i<all.length;i++){
+      var g=idOf(all[i]);
+      if(!isMobileRoute(g)||g===id)continue;
+      if(g.localeCompare(id)>0){ref=all[i];break;}
+      ref=all[i].nextSibling;
+    }
+    if(ref!==n&&n.nextSibling!==ref)n.parentNode.insertBefore(n,ref);
+    return;
+  }
+  var r=rank(id);
+  if(r<0)return;
+  var e=find(isEntry);
+  if(!e)return;
+  var ref=e,all=nodes();
+  for(var i=0;i<all.length;i++){
+    var g=idOf(all[i]),k=rank(g);
+    if(k<0||g===id)continue;
+    if(k>r){ref=all[i];break;}
+    if(e.compareDocumentPosition(all[i])&Node.DOCUMENT_POSITION_PRECEDING)ref=all[i].nextSibling;
+  }
+  if(ref!==e&&ref&&(e.compareDocumentPosition(ref)&Node.DOCUMENT_POSITION_FOLLOWING))ref=e;
+  if(ref!==n&&n.nextSibling!==ref)e.parentNode.insertBefore(n,ref);
+}
+new MutationObserver(function(recs){
+  for(var a=0;a<recs.length;a++){
+    var added=recs[a].addedNodes;
+    for(var b=0;b<added.length;b++)slot(added[b]);
+  }
+}).observe(document.head,{childList:true});
+var L=nodes();for(var i=0;i<L.length;i++)slot(L[i]);
+}catch(e){}})();`
+        return { html, tags: [{ tag: 'script', children: script, injectTo: 'head' as const }] }
+      },
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), scenePreloadHints(), redirectRouteHints(), routeScriptHints(), routeStylesheets(), openWithAPlate()],
+  plugins: [react(), scenePreloadHints(), redirectRouteHints(), routeScriptHints(), routeStylesheets(), routeStylesheetsDev(), openWithAPlate()],
   build: {
     target: ['es2020', 'safari15'],
     cssTarget: 'safari15',

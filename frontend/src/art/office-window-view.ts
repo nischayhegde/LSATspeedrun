@@ -96,6 +96,10 @@ type RegionLook = {
   daylight: number
   /** Strength of that spill, as a multiple of the authored interior level. */
   daylightStrength: number
+  /** Disc and sun-side sky. Warm brass for day, pale teal for the orbital night. */
+  sun: number
+  /** Horizon on the sun side, where the sky picks up ground bounce. */
+  horizonWarm: number
   night: boolean
 }
 
@@ -129,22 +133,22 @@ const LOOKS: Record<OfficeWindowRegion, RegionLook> = {
   city: {
     skyTop: 0x6b9fc0, haze: 0xb0b3a8, hazeDepth: .44, groundHaze: .8,
     ground: 0x7e8c78, stone: 0xa89c84, accent: 0xd08a5c, road: 0x5e6866, roof: 0x7d6a5f,
-    daylight: 0xf0d3a6, daylightStrength: 1.14, night: false,
+    daylight: 0xf0d3a6, daylightStrength: 1.14, sun: 0xffe2b0, horizonWarm: 0xd4c4a0, night: false,
   },
   nation: {
     skyTop: 0x74a6c4, haze: 0xb6b9ab, hazeDepth: .4, groundHaze: .74,
     ground: 0x86a172, stone: 0xa2977f, accent: 0x6e9689, road: 0xbfae90, roof: 0xc0a469,
-    daylight: 0xf4e2bb, daylightStrength: 1.24, night: false,
+    daylight: 0xf4e2bb, daylightStrength: 1.24, sun: 0xffebc4, horizonWarm: 0xddd4b0, night: false,
   },
   ocean: {
     skyTop: 0x5c99b8, haze: 0xa8b5b8, hazeDepth: .44, groundHaze: .3,
     ground: 0x35646e, stone: 0x9e988a, accent: 0x4b8b93, road: 0x767d79, roof: 0x6d6156,
-    daylight: 0xcfe4e6, daylightStrength: 1.26, night: false,
+    daylight: 0xcfe4e6, daylightStrength: 1.26, sun: 0xf2e6c8, horizonWarm: 0xc5cfc8, night: false,
   },
   continent: {
     skyTop: 0x6795b6, haze: 0xb2b1a7, hazeDepth: .4, groundHaze: .74,
     ground: 0x818e6f, stone: 0xaaa393, accent: 0xc08b64, road: 0xada492, roof: 0x949ba3,
-    daylight: 0xf3d5b4, daylightStrength: 1.18, night: false,
+    daylight: 0xf3d5b4, daylightStrength: 1.18, sun: 0xffe0b8, horizonWarm: 0xd2c8b0, night: false,
   },
   // Night keeps its darkness — this is the one region where the room being
   // brighter than the window is the truth — but not so much of it that the
@@ -154,7 +158,7 @@ const LOOKS: Record<OfficeWindowRegion, RegionLook> = {
   orbit: {
     skyTop: 0x0a1024, haze: 0x2a3358, hazeDepth: .5, groundHaze: .7,
     ground: 0x24323f, stone: 0x8a9694, accent: 0x6fd0d8, road: 0x353f47, roof: 0x4b555f,
-    daylight: 0x9fd6de, daylightStrength: .86, night: true,
+    daylight: 0x9fd6de, daylightStrength: .86, sun: 0xc5d4ea, horizonWarm: 0x3a4568, night: true,
   },
 }
 
@@ -219,26 +223,26 @@ function hash(seed: number) {
 }
 
 /**
- * Sun high-right, just outside the frame, shining in from the district.
+ * Sun high-right, just inside the opening, shining in from the district.
  *
  * The older vector sat behind the viewer so every window-facing wall took a
  * third of the sun and the sky through the glass was the anti-solar hemisphere
  * — a flat, even wash with no source. Putting the sun in front of the glass
- * (negative Z) puts a glow in the upper-right of the opening, backlights the
- * fronts, and leaves the right flanks as the bright warm plane. The room's own
- * yaw already shows those flanks; skylight, not a fake frontal sun, keeps the
- * fronts readable.
+ * (negative Z) puts a disc in the upper-right of the opening, backlights the
+ * fronts, and leaves the right flanks as the bright warm plane. Skylight, not a
+ * fake frontal sun, keeps the fronts readable; the room's key then arrives from
+ * the same window the player is looking through.
  */
-const SUN = new THREE.Vector3(.55, .42, -.72).normalize()
+const SUN = new THREE.Vector3(.58, .52, -.62).normalize()
 /**
- * Skylight is the floor a shaded outdoor wall actually sits on. It used to be
- * .5 under a sun that also hit the fronts; the fronts now take none of the sun,
- * so the floor is a little higher and cool, and the sun's own contribution is
- * a warm add on the flanks and roofs rather than a scalar on every albedo.
+ * Skylight is the floor a shaded outdoor wall actually sits on. Fronts now take
+ * none of the sun, so the floor is a little higher and cool, and the sun's own
+ * contribution is a warm add on the flanks and roofs rather than a scalar on
+ * every albedo.
  */
-const SKYLIGHT = .56
-const SUNLIGHT = .68
-/** Cool skylight multiplier, as sRGB hex. Applied in `Sheet.lit`. */
+const SKYLIGHT = .58
+const SUNLIGHT = .64
+/** Cool skylight tint, as sRGB hex. Applied in `Sheet.lit`. */
 const SKY_LIGHT = 0xb7cce0
 const GABLE_FRONT = new THREE.Vector3(0, .62, .78).normalize()
 const GABLE_BACK = new THREE.Vector3(0, .62, -.78).normalize()
@@ -311,7 +315,7 @@ class Sheet {
       return albedo.multiplyScalar((.46 + lambert * .22) * brightness)
     }
     const sky = new THREE.Color().setHex(SKY_LIGHT).multiplyScalar(SKYLIGHT * brightness)
-    const sun = new THREE.Color().setHex(this.look.daylight).multiplyScalar(SUNLIGHT * lambert * brightness)
+    const sun = new THREE.Color().setHex(this.look.sun).multiplyScalar(SUNLIGHT * lambert * brightness)
     return albedo.multiply(sky.add(sun))
   }
 
@@ -375,7 +379,7 @@ class Sheet {
    * It costs nothing. `gradedQuad` already emits the same six vertices with two
    * colours instead of one, so the triangle count is identical.
    */
-  box(x: number, y: number, z: number, width: number, height: number, depth: number, base: number, brightness = 1, openings = 0) {
+  box(x: number, y: number, z: number, width: number, height: number, depth: number, base: number, brightness = 1) {
     const hw = width / 2
     const hd = depth / 2
     const top = y + height
@@ -386,7 +390,6 @@ class Sheet {
     this.gradedQuad([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, top, z - hd], [x + hw, top, z + hd], grimed(RIGHT), shade(RIGHT))
     this.gradedQuad([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, top, z + hd], [x - hw, top, z - hd], grimed(LEFT), shade(LEFT))
     this.quad([x - hw, top, z + hd], [x + hw, top, z + hd], [x + hw, top, z - hd], [x - hw, top, z - hd], shade(UP))
-    if (openings && width > 2.2 && height > 3.2) this.glaze(x, y, z + hd + .03, width, height, openings)
   }
 
   /** A pitched roof over a mass, ridge running along x. */
@@ -480,39 +483,6 @@ class Sheet {
   }
 
   /**
-   * Window grid on a facade facing the glass. Dark openings are what make a
-   * masonry wall read as a building rather than a crate, and at this range a
-   * plate per opening is cheaper than a bump map the contour pass cannot see.
-   */
-  glaze(x: number, y: number, zFront: number, width: number, height: number, seed: number) {
-    const storeys = Math.min(4, Math.max(1, Math.floor(height / 2.7)))
-    const bays = Math.min(5, Math.max(2, Math.floor(width / 1.9)))
-    const marginX = width * .14
-    const marginY = height * .16
-    const cellW = (width - marginX * 2) / bays
-    const cellH = (height - marginY * 2) / storeys
-    const gw = Math.min(.72, cellW * .42)
-    const gh = Math.min(1.35, cellH * .52)
-    for (let storey = 0; storey < storeys; storey += 1) {
-      for (let bay = 0; bay < bays; bay += 1) {
-        const occupied = hash(seed * 13 + storey * 7 + bay)
-        if (occupied < .12) continue
-        const lit = this.look.night ? occupied > .38 : occupied > .84
-        const glass = lit
-          ? (this.look.night ? 0xc8e8ea : 0xa39468)
-          : (this.look.night ? 0x152028 : 0x1a2229)
-        this.plate(
-          x - width / 2 + marginX + (bay + .5) * cellW,
-          y + marginY + storey * cellH + cellH * .18,
-          zFront,
-          gw, gh,
-          tone(glass, this.look.night && lit ? 1.4 : 1),
-        )
-      }
-    }
-  }
-
-  /**
    * Storeys of windows on the face of a mass that turns toward the glass.
    *
    * This is the single thing that separates the one part of this view that
@@ -550,7 +520,15 @@ class Sheet {
     seed: number
   }) {
     const { x, y, z, width, height, storey, glass, lit, litShare = 0, lintel, seed } = options
+    // A building's storeys are its height divided by its storey, and the top
+    // opening then clears the parapet by the sill height it was given. The first
+    // version of this subtracted most of a storey before dividing, which put one
+    // row of windows on a six-metre-tall two-storey building and made every
+    // region read as a warehouse.
     const rows = Math.max(1, Math.floor(height / storey))
+    // Openings are sized from the storey rather than from the bay, so a wide
+    // mass gets more windows and not wider ones. A window that scales with its
+    // building is the tell of a massing model with a texture on it.
     const openWidth = Math.min(storey * .34, .95)
     const openHeight = storey * .5
     const columns = Math.max(1, Math.floor(width / (openWidth * 1.8)))
@@ -645,15 +623,30 @@ export type OfficeWindowView = {
   /** Colour the room's window spill should take, so inside agrees with out. */
   daylight: number
   daylightStrength: number
+  /** Zenith, for the room's hemisphere so inside agrees with the sky. */
+  skyTop: number
+  haze: number
+  /** Disc colour, and the key the room should take from the same sun. */
+  sunColor: number
+  night: boolean
   /**
-   * Unit vector toward the sun, in the room's space. The view group is yawed
-   * onto the sightline and the window group itself is unrotated, so rotating
-   * the authored sun by that yaw is the direction the room's lights should use.
+   * Tiny equirectangular sky, for the pane's reflection. A 32×16 map on
+   * constrained devices; null only where there is no document (tests, node).
+   */
+  envMap: THREE.Texture | null
+  /**
+   * Where the sun stands, in the room's own axes.
+   *
+   * The view is built around a fixed `SUN` and then yawed onto the sightline,
+   * so the direction the district is lit from is only knowable here. The room
+   * needs it because its own key has to agree: with the sun up and to the
+   * viewer's right outside, every lit flank in the window faces right, and a
+   * key that rakes the room from the left puts the two halves of one picture
+   * under two different afternoons. Nobody names that and everybody sees it.
    */
   sunDirection: THREE.Vector3
-  night: boolean
-  skyTop: number
   update: (elapsed: number) => void
+  dispose: () => void
   triangles: number
   meshes: number
 }
@@ -717,7 +710,7 @@ const GROUND_EDGE = 260
  */
 const ORBIT_SLACK = 2.2
 
-export function buildOfficeWindowView({ tier, openingWidth, openingHeight, standoff = 7, lateralOffset = 4.6, verticalOffset = 1.6, storeyLift = 0 }: {
+export function buildOfficeWindowView({ tier, openingWidth, openingHeight, standoff = 7, lateralOffset = 4.6, verticalOffset = 1.6, storeyLift = 0, lite = false }: {
   tier: number
   openingWidth: number
   openingHeight: number
@@ -739,6 +732,8 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
   lateralOffset?: number
   /** The same vertically, which only widens the cone and does not turn it. */
   verticalOffset?: number
+  /** Thin the sky grid and drop dust-scale extras. Constrained devices pass this. The sun disc and a cheap env map stay. */
+  lite?: boolean
 }): OfficeWindowView {
   const region = officeWindowRegionFor(tier)
   const look = LOOKS[region]
@@ -839,7 +834,7 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
     close.debugColour = [0, 0, 1]
   }
 
-  buildSky(sky, look, coverHalfWidth(SKY_DEPTH), coverHalfHeight(SKY_DEPTH))
+  buildSky(sky, look, coverHalfWidth(SKY_DEPTH), coverHalfHeight(SKY_DEPTH), lite)
   buildGround(ground, look, region, grade, coverHalfWidth)
 
   const context: RegionContext = {
@@ -869,22 +864,33 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
   const update = (elapsed: number) => {
     for (const mover of movers) {
       const span = mover.to - mover.from
-      mover.object.position.x = mover.from + (((elapsed * mover.speed) % span) + span) % span
+      const x = mover.from + (((elapsed * mover.speed) % span) + span) % span
+      // Past the glass cone a mover is a matrix write nobody can see.
+      if (Math.abs(x) > 72) continue
+      mover.object.position.x = x
       if (mover.bob) mover.object.position.y = mover.restY + Math.sin(elapsed * .7 + mover.from) * mover.bob
       mover.object.updateMatrix()
     }
   }
   update(0)
 
+  const envMap = buildSkyEnvMap(look, lite)
+
   return {
     root,
     region,
     daylight: look.daylight,
     daylightStrength: look.daylightStrength,
-    sunDirection: SUN.clone().applyAxisAngle(UP, root.rotation.y),
-    night: look.night,
     skyTop: look.skyTop,
+    haze: look.haze,
+    sunColor: look.sun,
+    night: look.night,
+    envMap,
+    // The yaw is the only transform between this view's axes and the room's,
+    // so rotating the authored sun by it is the whole conversion.
+    sunDirection: SUN.clone().applyAxisAngle(UP, root.rotation.y),
     update,
+    dispose: () => { envMap?.dispose() },
     triangles,
     meshes: root.children.length,
   }
@@ -926,68 +932,89 @@ function addMover(
 }
 
 /**
- * The sky, as graded bands plus whatever hangs in it.
+ * Where the sun (or moon) sits on the sky plane, in the view's own metres.
  *
- * Banded rather than smooth on purpose. The composite quantises everything
- * anyway, and authoring the steps means they land where the painting wants them
- * instead of wherever the posteriser happens to put them. The lowest band is
- * exactly the haze colour, which is what lets the ground plane's far edge
- * disappear into the horizon instead of ending on a visible lip.
+ * Intersects the authored sun ray with z = -SKY_DEPTH so the disc, the corona
+ * and the horizontal sky warmth all share one place. If the ray were behind the
+ * glass the disc would sit off the plane; we clamp to the opening instead.
  */
-function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight: number) {
-  const bands = 8
-  const columns = 5
-  // Reaching well below the horizon costs two triangles and covers the sliver
-  // of sky under the ground plane's far edge that a high floor can see past.
+function sunOnSky(halfWidth: number, halfHeight: number) {
+  if (SUN.z >= -.05) {
+    return {
+      x: Math.sign(SUN.x || 1) * halfWidth * .78,
+      y: halfHeight * Math.max(.22, SUN.y),
+    }
+  }
+  const t = -SKY_DEPTH / SUN.z
+  return {
+    x: THREE.MathUtils.clamp(SUN.x * t, -halfWidth * .92, halfWidth * .92),
+    y: THREE.MathUtils.clamp(SUN.y * t, -halfHeight * .15, halfHeight * .92),
+  }
+}
+
+function skyColour(look: RegionLook, x: number, y: number, halfWidth: number, halfHeight: number, sunX: number, sunY: number) {
+  const top = halfHeight * 1.2
+  const elevation = Math.max(0, y / top)
+  let hex = mixHex(look.haze, look.skyTop, Math.pow(elevation, .55))
+  if (look.night) return tone(hex, 1)
+  const nearHorizon = elevation > 0 && elevation < .38
+  if (nearHorizon) {
+    const band = Math.max(0, 1 - Math.abs(elevation - .14) / .22)
+    const sunSide = .45 + .55 * Math.max(0, 1 - Math.abs(x - sunX) / (halfWidth * 1.4))
+    hex = mixHex(hex, look.horizonWarm, band * .42 * sunSide)
+  }
+  const dx = (x - sunX) / halfWidth
+  const dy = (y - sunY) / halfHeight
+  const glow = Math.max(0, 1 - Math.hypot(dx, dy) / 1.15)
+  const glow2 = glow * glow
+  return tone(mixHex(hex, look.sun, glow2 * .55), 1 + glow2 * .32)
+}
+
+/**
+ * The sky, as a graded grid plus whatever hangs in it.
+ *
+ * A single stack of full-width bands was a smooth zenith with no sun in it —
+ * the same colour left to right, which is how a sky reads as a painted card.
+ * Splitting horizontally lets the sun side go warm and the opposite side stay
+ * the region's own cool, and it is still one merged mesh. Banded rather than
+ * smooth on purpose: the composite quantises everything anyway, and authoring
+ * the steps means they land where the painting wants them.
+ */
+function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight: number, lite: boolean) {
+  const rows = lite ? 7 : 10
+  const cols = lite ? 4 : 6
   const bottom = -halfHeight * 1.2
   const top = halfHeight * 1.2
-  const sunX = SUN.z < 0 ? (SUN.x / -SUN.z) * SKY_DEPTH : halfWidth * .72
-  const sunY = SUN.z < 0 ? (SUN.y / -SUN.z) * SKY_DEPTH : halfHeight * .5
-  for (let index = 0; index < bands; index += 1) {
-    const y0 = bottom + (top - bottom) * (index / bands)
-    const y1 = bottom + (top - bottom) * ((index + 1) / bands)
-    // Only the top half of the quad is sky proper; the part below the horizon
-    // is there to be hidden, so the whole lower half stays at the haze value.
-    const height = Math.max(0, (y0 + y1) / 2 / top)
-    const zenith = Math.pow(height, .55)
-    for (let column = 0; column < columns; column += 1) {
-      const u0 = column / columns
-      const u1 = (column + 1) / columns
-      const x0 = -halfWidth + halfWidth * 2 * u0
-      const x1 = -halfWidth + halfWidth * 2 * u1
-      const xMid = (x0 + x1) / 2
-      // Warmth toward the sun's azimuth, stronger near the horizon. This is
-      // the aerial-perspective equivalent of a sun just out of frame: the
-      // right-hand sky goes gold while the zenith stays the region's blue.
-      const towardSun = 1 - Math.min(1, Math.abs(xMid - sunX) / (halfWidth * 1.45))
-      const warmth = towardSun * (1 - zenith) * (look.night ? .12 : .48)
-      const base = mixHex(look.haze, look.skyTop, zenith)
-      const graded = mixHex(base, look.night ? look.accent : look.daylight, warmth * .5)
-      const boost = 1 + towardSun * (look.night ? .06 : .18) * (1 - zenith * .35)
+  const { x: sunX, y: sunY } = sunOnSky(halfWidth, halfHeight)
+  for (let row = 0; row < rows; row += 1) {
+    const y0 = bottom + (top - bottom) * (row / rows)
+    const y1 = bottom + (top - bottom) * ((row + 1) / rows)
+    const yMid = (y0 + y1) / 2
+    for (let col = 0; col < cols; col += 1) {
+      const x0 = -halfWidth + halfWidth * 2 * (col / cols)
+      const x1 = -halfWidth + halfWidth * 2 * ((col + 1) / cols)
       sheet.quad(
         [x0, y0, -SKY_DEPTH], [x1, y0, -SKY_DEPTH],
         [x1, y1, -SKY_DEPTH], [x0, y1, -SKY_DEPTH],
-        tone(graded, boost),
+        skyColour(look, (x0 + x1) / 2, yMid, halfWidth, halfHeight, sunX, sunY),
       )
     }
   }
-  // Everything in the sky is drawn a few centimetres in front of the bands and
+  // Everything in the sky is drawn five centimetres in front of the bands and
   // nothing is drawn in front of that. The contour pass thresholds on depth
   // difference relative to distance, so at seventy-eight metres a five
   // centimetre step is three orders of magnitude below the edge threshold and
-  // draws no line, while still clearing the depth buffer's precision there by
+  // draws no ink, while still clearing the depth buffer's precision there by
   // an order of magnitude. That is the whole trick: a cloud has to be a soft
   // shape with no ink around it, and the way to get that from a contour pass is
   // to give it nothing to contour.
   const plane = -SKY_DEPTH + .05
-  const sunPlane = -SKY_DEPTH + .04
+  const gores = lite ? 6 : 8
 
   if (look.night) {
-    const moonX = halfWidth * .28
-    const moonY = halfHeight * .38
-    sheet.disc(moonX, moonY, sunPlane, 6.4, tone(mixHex(look.haze, look.accent, .35), .7))
-    sheet.disc(moonX, moonY, sunPlane, 2.6, tone(0xdde6f2, .92))
-    for (let index = 0; index < 30; index += 1) {
+    sheet.disc(sunX, sunY, plane, halfHeight * .055, tone(look.sun, 1.15), gores)
+    if (!lite) sheet.disc(sunX, sunY, plane, halfHeight * .16, tone(look.sun, .28), gores)
+    for (let index = 0; index < (lite ? 16 : 30); index += 1) {
       const size = .3 + hash(index * 5.3) * .5
       sheet.plate(
         (hash(index * 3.1) - .5) * halfWidth * 1.8,
@@ -999,27 +1026,31 @@ function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight:
     return
   }
 
-  if (SUN.z < 0) {
-    const sx = Math.max(-halfWidth * .92, Math.min(halfWidth * .92, sunX))
-    const sy = Math.max(halfHeight * .04, Math.min(halfHeight * .82, sunY))
-    sheet.disc(sx, sy, sunPlane, 16, tone(mixHex(look.haze, look.daylight, .5), .9), 10)
-    sheet.disc(sx, sy, sunPlane, 8.5, tone(mixHex(look.daylight, 0xffe7b0, .55), 1), 10)
-    sheet.disc(sx, sy, sunPlane, 3.4, tone(0xfff4d8, 1.1), 10)
+  // Corona first, then the disc, then the clouds. Clouds that overlap the glow
+  // read as in front of the sun, which is the cheaper half of occlusion.
+  if (!lite) {
+    sheet.disc(sunX, sunY, plane, halfHeight * .38, tone(look.sun, .22), gores)
+    sheet.disc(sunX, sunY, plane, halfHeight * .18, tone(look.sun, .55), gores)
+  } else {
+    sheet.disc(sunX, sunY, plane, halfHeight * .2, tone(look.sun, .35), gores)
   }
+  sheet.disc(sunX, sunY, plane, halfHeight * .045, tone(0xfff6e0, 1.35), gores)
 
   // Kept low in the quad on purpose. The sky plane reaches far above what the
   // opening admits — it has to, so its own edge is never found — and clouds
   // scattered over the whole of it are clouds nobody sees. The band that is
   // actually in frame is the first fifth or so above the horizon.
-  for (let index = 0; index < 7; index += 1) {
+  const cloudCount = lite ? 3 : 6
+  for (let index = 0; index < cloudCount; index += 1) {
     cloud(
       sheet,
       (hash(index * 2.7) - .5) * halfWidth * 1.5,
-      halfHeight * (.05 + hash(index * 4.1) * .32),
+      halfHeight * (.06 + hash(index * 4.1) * .34),
       plane,
-      halfWidth * (.14 + hash(index * 6.3) * .2),
+      halfWidth * (.16 + hash(index * 6.3) * .2),
       look,
       index,
+      sunX,
     )
   }
 }
@@ -1031,12 +1062,13 @@ function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight:
  * silhouette carries no ink. What separates the cloud from the sky is value
  * alone, which is how a cloud is painted anyway: a bright top, a cooler shaded
  * base picked out of the horizon colour, and a base line straight enough to
- * say the whole shelf is sitting at one altitude.
+ * say the whole shelf is sitting at one altitude. The sun-facing lobes take the
+ * disc's own warmth; the ones in its shade stay with the horizon.
  */
-function cloud(sheet: Sheet, x: number, y: number, z: number, width: number, look: RegionLook, seed: number) {
-  const sunSide = 1 - Math.min(1, Math.abs(x - (SUN.z < 0 ? (SUN.x / -SUN.z) * SKY_DEPTH : 0)) / Math.max(12, width * 4))
-  const base = tone(mixHex(look.haze, mixHex(0xe9e2d2, look.daylight, sunSide * .25), .5), 1)
-  const crown = tone(mixHex(0xfaf3e2, 0xfff4d8, sunSide * .45), .96 + sunSide * .06)
+function cloud(sheet: Sheet, x: number, y: number, z: number, width: number, look: RegionLook, seed: number, sunX: number) {
+  const base = tone(mixHex(look.haze, 0xe9e2d2, .5), 1)
+  const crown = tone(mixHex(0xfaf3e2, look.sun, .18), .98)
+  const shade = tone(mixHex(look.haze, 0xd4cfc4, .35), .9)
   const lobes = 3 + Math.floor(hash(seed * 9.7) * 3)
   const step = width / lobes
   const floorY = y
@@ -1052,14 +1084,59 @@ function cloud(sheet: Sheet, x: number, y: number, z: number, width: number, loo
     // The tallest lobe sits off-centre; a symmetric cloud reads as a logo.
     const rise = step * (.55 + hash(seed * 3.1 + index * 5.9) * .95)
     const half = step * (.62 + hash(seed * 7.3 + index) * .3)
+    const lit = Math.abs(lobeX - sunX) < Math.abs(x - sunX) || (sunX - x) * (lobeX - x) > 0
+    const fill = lit ? crown : shade
     sheet.quad(
       [lobeX - half, floorY + step * .2, z], [lobeX + half, floorY + step * .2, z],
       [lobeX + half * .5, floorY + rise, z], [lobeX - half * .5, floorY + rise, z],
-      crown,
+      fill,
     )
-    sheet.triangle([lobeX - half, floorY + step * .2, z], [lobeX - half * .5, floorY + rise, z], [lobeX - half * 1.05, floorY + step * .5, z], crown)
-    sheet.triangle([lobeX + half, floorY + step * .2, z], [lobeX + half * 1.05, floorY + step * .5, z], [lobeX + half * .5, floorY + rise, z], crown)
+    sheet.triangle([lobeX - half, floorY + step * .2, z], [lobeX - half * .5, floorY + rise, z], [lobeX - half * 1.05, floorY + step * .5, z], fill)
+    sheet.triangle([lobeX + half, floorY + step * .2, z], [lobeX + half * 1.05, floorY + step * .5, z], [lobeX + half * .5, floorY + rise, z], fill)
   }
+}
+
+/**
+ * A 64×32 equirectangular sky, for the pane to reflect. Built once, never
+ * updated: the view has no moving sun, and a canvas this small is cheaper than
+ * a cube of six faces the standard material would sample the same way.
+ */
+function buildSkyEnvMap(look: RegionLook, lite = false): THREE.Texture | null {
+  if (typeof document === 'undefined') return null
+  const width = lite ? 32 : 64
+  const height = lite ? 16 : 32
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const sky = new THREE.Color(look.skyTop)
+  const haze = new THREE.Color(look.haze)
+  const sun = new THREE.Color(look.sun)
+  const image = ctx.createImageData(width, height)
+  for (let y = 0; y < height; y += 1) {
+    const elevation = 1 - y / (height - 1)
+    for (let x = 0; x < width; x += 1) {
+      const azimuth = x / width
+      const dx = azimuth - .62
+      const dy = elevation - .64
+      const glow = Math.max(0, 1 - Math.hypot(dx * 1.7, dy) / .55) ** 2
+      const colour = sky.clone().lerp(haze, 1 - Math.pow(elevation, .7))
+      colour.lerp(sun, glow * (look.night ? .4 : .65))
+      colour.multiplyScalar(look.night ? .7 + glow * .5 : 1 + glow * .4)
+      const index = (y * width + x) * 4
+      image.data[index] = Math.min(255, colour.r * 255)
+      image.data[index + 1] = Math.min(255, colour.g * 255)
+      image.data[index + 2] = Math.min(255, colour.b * 255)
+      image.data[index + 3] = 255
+    }
+  }
+  ctx.putImageData(image, 0, 0)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.mapping = THREE.EquirectangularReflectionMapping
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
 }
 
 /**
@@ -1347,7 +1424,7 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
       storey: 3, glass: 0x1f252c, seed: index * 11.7,
     })
   }
-  far.box(-farHalf * .34, grade, -47, 12, 14, 9, look.stone, .98, 21)
+  far.box(-farHalf * .34, grade, -47, 12, 14, 9, look.stone, .98)
   far.dome(-farHalf * .34, grade + 14, -47, 5.6, 5, mixHex(look.roof, 0x8d9296, .55))
   for (const spire of [farHalf * .24, farHalf * .6]) {
     const height = 18 + hash(spire) * 7
@@ -1371,7 +1448,7 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
     const height = 6 + hash(index * 8.3) * 7
     const width = midHalf * 2 / midBlocks * (.86 + hash(index * 2.9) * .34)
     const depth = 6 + hash(index) * 4
-    mid.box(x, grade, z, width, height, depth, brick[index % brick.length], 1, index + 3)
+    mid.box(x, grade, z, width, height, depth, brick[index % brick.length])
     mid.gable(x, grade + height, z, width * 1.06, depth, 1.5 + hash(index * 9.1) * .9, look.roof)
     // The block opposite, glazed. This is the one band that fills the middle of
     // the frame from an elevated floor, and unglazed it was the largest flat
@@ -1602,7 +1679,7 @@ function buildCircuit(far: Sheet, mid: Sheet, close: Sheet, { look, grade, overS
     const along = 26 + index * 6.2
     const x = (index % 2 ? 1 : -1) * (roadHalf + 3.4 + hash(index * 5.9) * 2.5) + drift(along / 46)
     const height = 3.4 + hash(index * 3.1) * 1.8
-    mid.box(x, grade, -along, 4, height, 3.6, wall[index % wall.length], 1, index + 9)
+    mid.box(x, grade, -along, 4, height, 3.6, wall[index % wall.length])
     // Thatch on the timber cottages, clay pantile on the rendered ones: the
     // pale, broken roofline is most of what makes a country street read light.
     mid.gable(x, grade + height, -along, 4.3, 3.6, 1.7 + hash(index * 8.7) * .5, hash(index * 6.3) > .5 ? 0xb49c63 : 0x8d5638)
@@ -1617,7 +1694,7 @@ function buildCircuit(far: Sheet, mid: Sheet, close: Sheet, { look, grade, overS
       seed: index * 4.9,
     })
   }
-  mid.box(-midHalf * .58, grade, -37, 8, 4.8, 5.4, 0x9c9268, 1, 14)
+  mid.box(-midHalf * .58, grade, -37, 8, 4.8, 5.4, 0x9c9268)
   mid.gable(-midHalf * .58, grade + 4.8, -37, 8.3, 5.4, 2.3, 0xb49c63)
   mid.box(-midHalf * .58 + 6.5, grade, -39, 4.4, 3.2, 4.4, 0x877c60)
   mid.gable(-midHalf * .58 + 6.5, grade + 3.2, -39, 4.7, 4.4, 1.5, 0x8d5638)
@@ -1669,7 +1746,7 @@ function buildTreatySea(far: Sheet, mid: Sheet, close: Sheet, { look, tier, grad
     const x = moleCentre - moleLength * .41 + (index + .5) * (moleLength * .82 / sheds)
     const z = -23 - hash(index) * 8
     const height = 4.2 + hash(index * 3.3) * 3
-    mid.box(x, sea + 1.7, z, 6, height, 6, mixHex(look.stone, 0x8a7c66, .5), 1, index + 12)
+    mid.box(x, sea + 1.7, z, 6, height, 6, mixHex(look.stone, 0x8a7c66, .5))
     mid.gable(x, sea + 1.7 + height, z, 6.3, 6, 1.2, look.roof)
   }
   const cranes = spanCount(moleLength * .7, 11, 3)
@@ -1686,7 +1763,7 @@ function buildTreatySea(far: Sheet, mid: Sheet, close: Sheet, { look, tier, grad
   // of the composition has to be as long as that side is.
   const embassyWidth = Math.max(14, midHalf * .62)
   mid.box(embassyX, sea, -24, embassyWidth + 1, 1.5, 10, mixHex(look.stone, 0xb0a894, .4))
-  mid.box(embassyX, sea + 1.5, -25.5, embassyWidth, embassyHeight, 7, mixHex(look.stone, 0xbdb5a0, .45), 1, 17)
+  mid.box(embassyX, sea + 1.5, -25.5, embassyWidth, embassyHeight, 7, mixHex(look.stone, 0xbdb5a0, .45))
   const columns = spanCount(embassyWidth * .8, 1.7, 6)
   for (let index = 0; index < columns; index += 1) {
     mid.box(embassyX - embassyWidth * .4 + (index + .5) * (embassyWidth * .8 / columns), sea + 1.5, -21.8, .58, embassyHeight - .4, .58, mixHex(look.stone, 0xcdc4ab, .5))
@@ -1784,7 +1861,7 @@ function buildSovereignArc(far: Sheet, mid: Sheet, close: Sheet, { look, tier, g
     const offset = 10.5 + index * 1.5
     const height = 8.5 - index * .3
     for (const side of [-1, 1]) {
-      mid.box(side * offset, grade, z, 9, height, 7, index % 2 ? ashlar : mixHex(ashlar, shadowed, .32), 1, index * 2 + (side < 0 ? 1 : 4))
+      mid.box(side * offset, grade, z, 9, height, 7, index % 2 ? ashlar : mixHex(ashlar, shadowed, .32))
       mid.box(side * offset, grade + height, z, 9.7, 1, 7.6, shadowed)
       mid.box(side * offset, grade + height + 1, z, 8, 1.9, 6, mixHex(look.roof, 0x7d848a, .45))
       // Windows first, then the colonnade over them. A formal wall is a grid of

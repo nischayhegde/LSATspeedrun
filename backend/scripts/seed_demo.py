@@ -63,11 +63,13 @@ from app.game import (
     settle_attempt,
     snapshot_case_context,
 )
+from app.experiments import enroll_unfiltered_run
 from app.models import (
     AiJob,
     Attempt,
     AttemptSettlement,
     DailyProgress,
+    LayerAssignment,
     LearnerRating,
     PlayerProfile,
     Question,
@@ -254,6 +256,7 @@ def _reset_learner(user: User) -> None:
     _reset_calibration(user)
     db.session.execute(delete(AiJob).where(AiJob.user_id == user.id))
     db.session.execute(delete(AttemptSettlement).where(AttemptSettlement.user_id == user.id))
+    db.session.execute(delete(LayerAssignment).where(LayerAssignment.subject_id == user.id))
     for session in StudySession.query.filter_by(user_id=user.id).all():
         db.session.delete(session)
     db.session.execute(delete(LedgerEntry).where(LedgerEntry.user_id == user.id))
@@ -778,6 +781,12 @@ def _write_history(user: User, pool: QuestionPool, now: datetime) -> dict:
         )
         db.session.add(session)
         db.session.flush()
+        # History is authored rather than built through `create_study_session`,
+        # so the live layers that every unfiltered sitting draws still have to
+        # be enrolled here. Skipping this left the lived-in account with zero
+        # `difficulty_targeting` rows while the layer was live.
+        if style == "cases":
+            enroll_unfiltered_run(user.id, session.id)
 
         cursor = started_at
         previous_passage_id: str | None = None
@@ -1303,6 +1312,7 @@ def _stage_live_trial(user: User, *, attempts: int = 60) -> dict:
         StudySession.user_id == user.id,
         StudySession.status.in_(["in_progress", "paused"]),
     ).all():
+        db.session.execute(delete(LayerAssignment).where(LayerAssignment.session_id == existing.id))
         db.session.delete(existing)
     db.session.commit()
 
@@ -1365,7 +1375,9 @@ def _stage_live_trial(user: User, *, attempts: int = 60) -> dict:
                 "attempts_needed": round_index + 1,
                 "url": f"http://localhost:5173/cases/{session.id}",
             }
-        # Discard and draw a different question set.
+        # Discard and draw a different question set. Assignment rows have no
+        # FK on session_id, so they survive a session delete unless cleared.
+        db.session.execute(delete(LayerAssignment).where(LayerAssignment.session_id == session.id))
         db.session.delete(session)
         db.session.commit()
     raise RuntimeError("Could not stage a prompted strategy trial after repeated attempts.")
@@ -1506,6 +1518,14 @@ def _verify(user: User, live: dict, unplaced: int = 0) -> dict:
         problems.append("nothing is affordable for a live purchase")
     if not live.get("renders_prompt"):
         problems.append("staged live session does not render a prompt")
+    cases = StudySession.query.filter_by(user_id=user.id, practice_style="cases").count()
+    targeting = LayerAssignment.query.filter_by(
+        subject_id=user.id, layer="difficulty_targeting"
+    ).count()
+    if targeting < cases:
+        problems.append(
+            f"difficulty_targeting enrolled on {targeting} of {cases} cases runs"
+        )
     bank = calibration.bank_summary()
     if bank["synthetic"] != bank["provisional"] + bank["estimated"] + bank["calibrated"]:
         # A rated row this seeder did not mark would be one a demo answer had

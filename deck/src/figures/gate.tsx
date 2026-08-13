@@ -1,5 +1,6 @@
 import type { GateFigure } from './types'
 import { usePhase, type FigureBody } from './kit'
+import { publicUrl } from '../public-url'
 
 /**
  * `game-never-gates` — the app's own unlock list, and the one row with no lock.
@@ -53,11 +54,11 @@ export function Gate({ spec, active, reduced }: FigureBody<GateFigure>) {
   return (
     <div className="fig-gt-gallery">
       <div className="fig-gt-office" style={{ opacity: phase >= 1 ? 1 : 0 }}>
-        <img src="/stills/demo-office-tier14.webp" alt="The fully built Lawyer Tycoon office" />
+        <img src={publicUrl('stills/demo-office-tier14.webp')} alt="The fully built Lawyer Tycoon office" />
         <span>Cases build the firm</span>
       </div>
       <div className="fig-gt-map" style={{ opacity: phase >= 2 ? 1 : 0 }}>
-        <img src="/stills/demo-map.webp" alt="The Lawyer Tycoon career map" />
+        <img src={publicUrl('stills/demo-map.webp')} alt="The Lawyer Tycoon career map" />
         <span>Cases expand the world</span>
       </div>
       <div className="fig-gt-access" style={{ opacity: phase >= 3 ? 1 : 0 }}>

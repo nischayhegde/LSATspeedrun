@@ -206,10 +206,11 @@ unchanged; if that matters for an analysis in flight, bump it.
 
 ## 4. What I left to siblings, on purpose
 
-**Difficulty estimation.** Consumed, never built. `difficulty_targeting` is in
-the registry as `planned` with its arms declared and a note saying it must stay
-off while the signal is a constant. When the Elo work lands, wiring it is one
-`experiments.assign` call and a change of `status` to `live`.
+**Difficulty targeting.** Consumed. `difficulty_targeting` is `live`. Selection
+calls `experiments.assign`, aims targeted slots at the student's Elo ability
+(or `published_difficulty` when one exists), and writes `exposure_policy`
+from `calibration.exposure_draw`. Empty published difficulty is expected and
+is not a crash.
 
 **Session construction and sequencing.** `run_sequencing` is registered as a
 `seam`, with the arms and the question already written down, and nothing in
@@ -249,10 +250,9 @@ it. `python3 tools/audit/section_reach.py`.
    should read 12.5% after, 45.8% before. If the "after" number has moved, a
    merge changed the rules.
 3. **`python3 tools/audit/adaptive_layers.py`** — the census should list eight
-   layers, of which five are `live`, one `calibrated`, one `seam` and one
-   `planned`. **No layer should be `unmeasured`**; `test_experiments.py` asserts
-   it, and a sibling adding an adaptive mechanism without registering it is
-   exactly the drift the registry exists to catch.
+   layers, of which six are `live`, one `calibrated`, and one `seam` (if
+   `run_sequencing` has not yet been marked live). **No layer should be
+   `unmeasured`**; `test_experiments.py` asserts it.
 4. **The session_id join in §2.5.** This is the silent one.
 5. **Create twenty runs** as a student with some history and confirm roughly a
    quarter drew `untargeted` and a quarter `front_loaded`. With twenty draws the

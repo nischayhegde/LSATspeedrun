@@ -2567,10 +2567,8 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
         purchase_price=price,
     )
     db.session.add(asset)
-    # Same-profile restore (stage_demo rewind, a deleted asset row) leaves the
-    # ledger fact behind. `uq_ledger_source` would 500 the next real purchase —
-    # the treasury demo's live click — so replace that stale row rather than
-    # colliding with it. A second click on an owned asset never reaches here.
+    # Demo rewind deletes a stale purchase row; a released hire uniquifies
+    # the next ledger key. Both hit `uq_ledger_source` if we write the bare key.
     stale = LedgerEntry.query.filter_by(
         user_id=profile.user_id,
         kind="asset_purchase",
@@ -2580,9 +2578,45 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
         db.session.delete(row)
     if stale:
         db.session.flush()
-    _ledger(profile, "asset_purchase", asset_key, -price, {"name": item["name"], "type": item["type"], "list_cost": item["cost"]})
+    prior_purchase = LedgerEntry.query.filter_by(
+        user_id=profile.user_id,
+        kind="asset_purchase",
+        source_id=_scoped_source(profile, asset_key),
+    ).first()
+    ledger_key = f"{asset_key}:{asset.id}" if prior_purchase else asset_key
+    _ledger(profile, "asset_purchase", ledger_key, -price, {"name": item["name"], "type": item["type"], "list_cost": item["cost"]})
     db.session.commit()
     return asset
+
+
+def release_staff(profile: PlayerProfile, asset_key: str) -> None:
+    """Let a hired person go. No refund — nothing in the catalog is sold back.
+
+    Staff are optional. The firm can run with an empty floor, so there is no
+    minimum roster to protect. Their bonuses and the office figure leave with
+    the `PlayerAsset` row.
+    """
+    item = ASSET_BY_KEY.get(asset_key)
+    if not item:
+        raise ValueError("asset_not_found")
+    if item["type"] != "staff":
+        raise ValueError("not_staff")
+    profile = _lock_profile(profile)
+    _settle_upkeep_locked(profile)
+    asset = PlayerAsset.query.filter_by(profile_id=profile.id, asset_key=asset_key).one_or_none()
+    if not asset:
+        raise ValueError("not_owned")
+    _collect_passive_locked(profile)
+    asset_id = asset.id
+    db.session.delete(asset)
+    _ledger(
+        profile,
+        "staff_release",
+        f"{asset_key}:{asset_id}",
+        0,
+        {"name": item["name"], "type": "staff"},
+    )
+    db.session.commit()
 
 
 def secure_district(profile: PlayerProfile, district_key: str) -> dict:

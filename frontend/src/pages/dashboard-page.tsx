@@ -72,10 +72,12 @@ export function PerformancePage() {
   // The clock starts the moment the form is created, so creation sits behind
   // the gate rather than in front of it.
   const [gateOpen, setGateOpen] = useState(false)
-  // Which metric card (if any) has its breakdown open, and which skill row
-  // (if any) is selected for a focus sprint. Click-driven rather than
-  // hover-driven so the same affordance works with a mouse or a thumb.
-  const [expandedMetric, setExpandedMetric] = useState<string | null>(null)
+  // Which metric is pinned in the shared reading under the row, and which
+  // skill row (if any) is selected for a focus sprint. Cards stay one height;
+  // hover previews a reading, a tap pins it so a phone thumb has the same
+  // surface a pointer does.
+  const [pinnedMetric, setPinnedMetric] = useState<string | null>(null)
+  const [hoveredMetric, setHoveredMetric] = useState<string | null>(null)
   const [selectedSkill, setSelectedSkill] = useState<string | null>(null)
   // Which question type the answer log is scoped to. Lifted here so the skill
   // matrix can drill from an aggregate row straight into the answers behind it.
@@ -282,96 +284,103 @@ export function PerformancePage() {
       )}
     </div>
   )
-  const toggleMetric = (key: string) => setExpandedMetric((prev) => (prev === key ? null : key))
+  const toggleMetric = (key: string) => setPinnedMetric((prev) => (prev === key ? null : key))
   const toggleSkill = (name: string) => setSelectedSkill((prev) => (prev === name ? null : name))
+  const activeMetric = hoveredMetric ?? pinnedMetric
+  const paceDelta = metrics.average_seconds_delta
+  const paceSignal = paceDelta === null ? null : (
+    <em className={paceDelta > 0 ? 'metric-trend-up' : paceDelta < 0 ? 'metric-trend-down' : ''}>
+      {paceDelta === 0
+        ? 'Same pace as previous 20'
+        : `${Math.abs(paceDelta)}s ${paceDelta > 0 ? 'faster' : 'slower'} than previous 20`}
+    </em>
+  )
+  const reasoningDelta = metrics.reasoning_delta
+  const coachedSignal = reasoningDelta === null ? null : (
+    <em className={reasoningDelta > 0 ? 'metric-trend-up' : reasoningDelta < 0 ? 'metric-trend-down' : ''}>
+      {reasoningDelta === 0
+        ? 'Grades holding steady'
+        : `Grades ${reasoningDelta > 0 ? 'up' : 'down'} ${Math.abs(reasoningDelta)} pts`}
+    </em>
+  )
   const sortedSkillsByVolume = [...performance.skills].sort((a, b) => b.attempts - a.attempts)
   const selectedSkillDetail = selectedSkill ? performance.skills.find((skill) => skill.name === selectedSkill) ?? null : null
-  // Every card explains a different number, so its "what does this mean"
-  // reveal draws from a different slice of the same snapshot rather than
-  // repeating the headline figure back at the student.
+  // One line under the row, never inside a card — so a reading cannot shove
+  // Performance Line down. The skill matrix and the review CTA live on their
+  // own tabs; what belongs here is the sentence that qualifies the number.
   const metricDetail: Record<string, React.ReactNode> = {
     test: sortedSkillsByVolume.length ? (
-      <>
-        <p>Accuracy by question type, across every graded rep so far.</p>
-        <div className="metric-breakdown">
-          {sortedSkillsByVolume.slice(0, 5).map((skill) => (
-            <button
-              type="button"
-              key={skill.name}
-              className={`metric-breakdown-row${selectedSkill === skill.name ? ' is-highlighted' : ''}`}
-              onClick={() => toggleSkill(skill.name)}
-            >
-              <span>{skill.name}</span>
-              <i style={{ width: `${skill.accuracy}%` }} />
-              <b>{skill.accuracy}%</b>
-            </button>
-          ))}
-        </div>
-        <small>Click a row to pull it up in the skill matrix below.</small>
-      </>
+      <p>
+        By type: {sortedSkillsByVolume.slice(0, 5).map((skill) => `${skill.name} ${skill.accuracy}%`).join(' · ')}.
+        Full matrix is on Skills.
+      </p>
     ) : <p>Answer a few cases to break accuracy out by question type.</p>,
     pace: testMetrics.attempts ? (
-      <>
-        <p>{testMetrics.pace_adherence}% of mega-litigation questions landed inside an even split of the clock.</p>
-        {metrics.average_seconds_delta !== null ? (
-          <p className={metrics.average_seconds_delta > 0 ? 'metric-trend-up' : metrics.average_seconds_delta < 0 ? 'metric-trend-down' : ''}>
-            {metrics.average_seconds_delta === 0
-              ? 'Same pace as your previous 20 questions.'
-              : `${Math.abs(metrics.average_seconds_delta)}s ${metrics.average_seconds_delta > 0 ? 'faster' : 'slower'} per question than your previous 20.`}
-          </p>
-        ) : <small>Answer 20 more questions to reveal a pace trend.</small>}
-      </>
+      <p>
+        {testMetrics.pace_adherence}% of mega-litigation questions landed inside an even split of the clock.
+        {paceDelta === null ? (
+          ' Answer 20 more to reveal a pace trend.'
+        ) : (
+          <>
+            {' '}
+            <em className={paceDelta > 0 ? 'metric-trend-up' : paceDelta < 0 ? 'metric-trend-down' : ''}>
+              {paceDelta === 0
+                ? 'Same pace as your previous 20 questions.'
+                : `${Math.abs(paceDelta)}s ${paceDelta > 0 ? 'faster' : 'slower'} per question than your previous 20.`}
+            </em>
+          </>
+        )}
+      </p>
     ) : <p>Sit a mega-litigation to establish an average split.</p>,
     coached: performance.coached_practice.attempts ? (
-      <>
-        <p>{performance.coached_practice.reasoning === null ? 'No explanations graded yet.' : `${performance.coached_practice.reasoning}% mean explanation grade across ${performance.coached_practice.attempts} coached case${performance.coached_practice.attempts === 1 ? '' : 's'}.`}</p>
-        {metrics.reasoning_delta !== null ? (
-          <p className={metrics.reasoning_delta > 0 ? 'metric-trend-up' : metrics.reasoning_delta < 0 ? 'metric-trend-down' : ''}>
-            {metrics.reasoning_delta === 0 ? 'Explanation grades are holding steady.' : `Explanation grades are ${metrics.reasoning_delta > 0 ? 'up' : 'down'} ${Math.abs(metrics.reasoning_delta)} pts over your last 20 graded answers.`}
-          </p>
-        ) : <small>Grade 20 more explanations to reveal a trend.</small>}
-      </>
+      <p>
+        {performance.coached_practice.reasoning === null
+          ? 'No explanations graded yet.'
+          : `${performance.coached_practice.reasoning}% mean explanation grade across ${performance.coached_practice.attempts} coached case${performance.coached_practice.attempts === 1 ? '' : 's'}.`}
+        {reasoningDelta === null ? ' Grade 20 more to reveal a trend.' : null}
+      </p>
     ) : <p>Run a set of cases to see explanation grades.</p>,
     review: (
-      <>
-        <div className="metric-breakdown metric-breakdown-review">
-          <div><span>Slipping</span><i style={{ width: `${Math.min(100, reviewMetrics.due * 10)}%` }} /><b>{reviewMetrics.due}</b></div>
-          <div><span>Holding</span><i style={{ width: `${Math.min(100, reviewMetrics.scheduled * 5)}%` }} /><b>{reviewMetrics.scheduled}</b></div>
-          <div><span>Mastered</span><i style={{ width: `${Math.min(100, reviewMetrics.mastered * 3)}%` }} /><b>{reviewMetrics.mastered}</b></div>
-        </div>
-        {/* "Slipping" rather than "due": nothing here is gated on a date. The
-            scheduler ranks by how likely you still are to recall each question
-            and hands back the weakest whenever you sit down. */}
-        <p>
-          {reviewMetrics.desired_retention
-            ? `A question is slipping once your chance of getting it right again drops below ${Math.round(reviewMetrics.desired_retention * 100)}%. No calendar gate: the weakest material comes first whenever you start a run.`
-            : 'Repairs are mixed through your runs, not stacked at the front.'}
-        </p>
-        {reviewMetrics.due > 0 ? (
-          <button type="button" className="metric-detail-action" onClick={openPrimaryTraining} disabled={startCases.isPending}>
-            Start a run — repairs folded in <ArrowRight size={14} />
-          </button>
-        ) : <p>Nothing slipping.</p>}
-      </>
+      <p>
+        {reviewMetrics.desired_retention
+          ? `Slipping means the chance of getting it right again is below ${Math.round(reviewMetrics.desired_retention * 100)}%. Weakest first — no calendar gate.`
+          : 'Repairs are mixed through your runs, not stacked at the front.'}
+      </p>
     ),
     confidence: confidenceMetrics.sample ? (
-      <>
-        <p>Average self-rated confidence: {confidenceMetrics.average ?? '—'} / 5 across {confidenceMetrics.sample} rated answer{confidenceMetrics.sample === 1 ? '' : 's'}.</p>
-        <p>A high-confidence miss is a wrong answer you rated 4 or 5.</p>
-      </>
+      <p>
+        Average self-rated confidence: {confidenceMetrics.average ?? '—'} / 5.
+        A high-confidence miss is a wrong answer you rated 4 or 5.
+      </p>
     ) : <p>Rate confidence on graded answers to see this.</p>,
   }
+  const idleMetricDetail = testMetrics.attempts ? metricDetail.pace : (
+    <p className="performance-metrics-idle">Hover or tap a measure for the reading behind it.</p>
+  )
   // One metric card, used at every width. The page used to carry a second,
   // phone-only copy of the same five measures; the tab strip below removed the
   // reason for it, so there is one control surface per measure again.
-  const renderMetricCard = (key: string, icon: React.ReactNode, label: string, value: React.ReactNode, isEmpty: boolean, caption: React.ReactNode) => (
-    <article className={`metric-card${expandedMetric === key ? ' is-expanded' : ''}`} key={key}>
-      <button type="button" className="metric-card-trigger" aria-expanded={expandedMetric === key} onClick={() => toggleMetric(key)}>
-        <div>{icon}<span>{label}</span><ChevronDown className="metric-card-chevron" size={13} /></div>
+  const renderMetricCard = (key: string, icon: React.ReactNode, label: string, value: React.ReactNode, isEmpty: boolean, caption: React.ReactNode, signal?: React.ReactNode) => (
+    <article
+      className={`metric-card${pinnedMetric === key || hoveredMetric === key ? ' is-selected' : ''}`}
+      key={key}
+      onMouseEnter={() => setHoveredMetric(key)}
+    >
+      <button
+        type="button"
+        className="metric-card-trigger"
+        aria-pressed={pinnedMetric === key}
+        aria-controls="performance-metrics-detail"
+        onClick={() => toggleMetric(key)}
+        onFocus={() => setHoveredMetric(key)}
+      >
+        <div>{icon}<span>{label}</span></div>
         <strong className={isEmpty ? 'stat-empty' : ''}>{value}</strong>
-        <small>{caption}</small>
+        <small>
+          <span>{caption}</span>
+          {signal}
+        </small>
       </button>
-      {expandedMetric === key && <div className="metric-detail">{metricDetail[key]}</div>}
     </article>
   )
   // The band, restated as one line for the summary. The full panel — with the
@@ -452,8 +461,7 @@ export function PerformancePage() {
             line of status, so it reads as one line under the recommendation
             it qualifies. */}
         <p className="dash-focus-note">
-          Practice is weighted {focus.types.length ? `toward ${focus.types.join(' · ')}` : 'evenly across the test'}.
-          {focus.explanation ? ` ${focus.explanation}` : ''}
+          {focus.explanation ? focus.explanation : ''}
           {/* The baseline each weak type was measured against, rather than the
               old "your own N% on that form" — the comparison is no longer
               against one sitting. It is the rest of the section rather than
@@ -633,12 +641,19 @@ export function PerformancePage() {
 
         {tab === 'evidence' && (
           <>
-            <section className="performance-metrics" aria-label="Core LSAT performance measures">
+            <section
+              className="performance-metrics"
+              aria-label="Core LSAT performance measures"
+              onMouseLeave={() => setHoveredMetric(null)}
+            >
               {renderMetricCard('test', <Target />, 'MEGA-LITIGATION PERFORMANCE', testMetrics.attempts ? `${testMetrics.accuracy}%` : '—', !testMetrics.attempts, `${testMetrics.attempts} measured attempts · ${testMetrics.pace_adherence}% inside an even split of the clock`)}
-              {renderMetricCard('pace', <TimerReset />, 'AVERAGE SPLIT', testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—', !testMetrics.attempts, 'Mega-litigation work only')}
-              {renderMetricCard('coached', <Brain />, 'COACHED PRACTICE', performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—', !performance.coached_practice.attempts, <>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</>)}
+              {renderMetricCard('pace', <TimerReset />, 'AVERAGE SPLIT', testMetrics.attempts ? `${Math.floor(testMetrics.average_seconds / 60)}:${String(testMetrics.average_seconds % 60).padStart(2, '0')}` : '—', !testMetrics.attempts, 'Mega-litigation work only', paceSignal)}
+              {renderMetricCard('coached', <Brain />, 'COACHED PRACTICE', performance.coached_practice.attempts ? `${performance.coached_practice.accuracy}%` : '—', !performance.coached_practice.attempts, <>{performance.coached_practice.attempts} case{performance.coached_practice.attempts === 1 ? '' : 's'} · {performance.coached_practice.reasoning === null ? 'no grades yet' : `${performance.coached_practice.reasoning}% mean explanation`}</>, coachedSignal)}
               {renderMetricCard('review', <Brain />, 'REVIEW RECOVERY', reviewMetrics.recovery_rate === null ? '—' : `${reviewMetrics.recovery_rate}%`, reviewMetrics.recovery_rate === null, `${reviewMetrics.due} slipping · ${reviewMetrics.scheduled} holding · ${reviewMetrics.mastered} mastered`)}
               {renderMetricCard('confidence', <Gauge />, 'CONFIDENCE ERRORS', confidenceMetrics.high_confidence_error_rate === null ? '—' : `${confidenceMetrics.high_confidence_error_rate}%`, confidenceMetrics.high_confidence_error_rate === null, `High-confidence misses across ${confidenceMetrics.sample} rated answers`)}
+              <div className="performance-metrics-detail" id="performance-metrics-detail" aria-live="polite">
+                {activeMetric ? metricDetail[activeMetric] : idleMetricDetail}
+              </div>
             </section>
 
             <section className="trend-panel">
@@ -659,7 +674,7 @@ export function PerformancePage() {
                 <div><strong>{readiness.rc_samples}</strong><span>Timed RC</span><small>20 recommended</small></div>
                 <div><strong>{readiness.completed_diagnostics}</strong><span>Mega-litigations</span><small>1 recommended</small></div>
               </div>
-              <details><summary>How evidence is separated</summary><p>Only the mega-litigation estimates test performance. Everything else is coached practice, reported separately. Repeated questions do not count toward the headline.</p></details>
+              <details><summary>How evidence is separated</summary><p>The mega-litigation is the headline estimate of test performance. Coached practice is reported separately and still counts in the projected score, at just over half the weight of a mega-litigation answer. Repeated questions do not count toward the headline.</p></details>
             </section>
           </>
         )}

@@ -309,7 +309,7 @@ body {
   .uw-map-toolbar { grid-template-columns: repeat(4, 38px); }
   .uw-map-toolbar button { width: 38px; height: 38px; }
   .catalog-view-buttons button { min-width: 40px; min-height: 40px; }.office-mobile-scene-menu > button.is-active { color: #17282b; background: #dbbd6a; }  .office-inventory-toggle { min-width: 136px; min-height: 40px; padding-inline: 9px; }
-  .office-inventory-toggle span { font-size: 7px; letter-spacing: .07em; }
+  .office-inventory-toggle span { font-size: 11px; letter-spacing: .07em; }
 
   .uw-arc-navigation,
   .uw-level-navigator-track { scroll-snap-type: x proximity; scrollbar-width: none; }
@@ -437,8 +437,7 @@ body {
    least able to absorb it. `.uw-scene-view-tabs`, `.uw-map-toolbar button`,
    `.uw-level-navigator` and `.uw-location-card` were all in this list. */
 @supports (-webkit-backdrop-filter: blur(1px)) {
-  .office-view-rail { -webkit-backdrop-filter: blur(10px); }
-  .office-inventory-panel { -webkit-backdrop-filter: blur(18px); }
+  .office-view-rail { -webkit-backdrop-filter: none; }
 }
 
 @media (pointer: coarse) {
@@ -1003,9 +1002,7 @@ body {
     min-width: 126px;
     min-height: 44px;
     border-radius: 14px;
-    background: rgba(8, 19, 29, .76);
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+    background: rgba(8, 19, 29, .96);
   }
   .office-game-page .office-inventory-panel {
     width: min(360px, calc(100vw - 24px));
@@ -1014,7 +1011,7 @@ body {
     bottom: 52px;
     border-radius: 18px;
   }
-  .office-mobile-scene-status small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 7.5px; letter-spacing: .08em; }
+  .office-mobile-scene-status small { color: #7fc4b8; font-family: var(--font-pixel); font-size: 11px; letter-spacing: .08em; }
   .office-mobile-scene-status strong { margin-top: 3px; overflow: hidden; font-family: var(--font-display); font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
   .office-mobile-brief-sheet {
     width: auto;

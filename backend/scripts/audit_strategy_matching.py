@@ -58,7 +58,7 @@ class _Passage:
 class _Question:
     """Enough of `models.Question` for the matcher to read."""
 
-    __slots__ = ("id", "section", "question_type", "stem", "stimulus", "passage", "difficulty")
+    __slots__ = ("id", "section", "question_type", "stem", "stimulus", "passage", "published_difficulty")
 
     def __init__(self, id: str, section: str, stem: str, context: str, passage: _Passage | None) -> None:
         self.id = id
@@ -67,7 +67,7 @@ class _Question:
         self.stem = stem
         self.stimulus = None if passage else context
         self.passage = passage
-        self.difficulty = 3
+        self.published_difficulty = None
 
 
 def load_bank(snapshot_dir: Path = SNAPSHOT_DIR) -> list[_Question]:
@@ -311,7 +311,7 @@ def audit(questions: list[_Question]) -> dict:
     per_strategy_section: dict[str, Counter[str]] = defaultdict(Counter)
     counts_histogram: Counter[int] = Counter()
     type_counts: Counter[str] = Counter()
-    difficulties: Counter[int] = Counter()
+    difficulties: Counter[int | None] = Counter()
     empty: list[str] = []
     section_violations: list[dict] = []
     totals = Counter()
@@ -327,7 +327,7 @@ def audit(questions: list[_Question]) -> dict:
         totals[question.section] += 1
         totals["all"] += 1
         type_counts[f"{question.section}|{question.question_type}"] += 1
-        difficulties[question.difficulty] += 1
+        difficulties[question.published_difficulty] += 1
         if question.passage and question.passage.comparative:
             comparative_questions += 1
             comparative_passages.add(id(question.passage))

@@ -89,6 +89,8 @@ const SHADE_CHUNK = `
 
 export type WaterUniforms = {
   uTime: { value: number }
+  /** 1 = full swell and wake; 0 = flat-lit cheap pass when the camera is far. */
+  uLod: { value: number }
   uDeep: { value: THREE.Color }
   uShallow: { value: THREE.Color }
   uSky: { value: THREE.Color }
@@ -125,6 +127,7 @@ export function createSeaSurface(color: number): SeaSurface {
   const geometry = new THREE.PlaneGeometry(220, 180, 88, 72)
   const uniforms: WaterUniforms = {
     uTime: { value: 0 },
+    uLod: { value: 1 },
     uDeep: { value: new THREE.Color(color).multiplyScalar(.62) },
     uShallow: { value: new THREE.Color(color).lerp(new THREE.Color(0x4f9698), .5) },
     uSky: { value: new THREE.Color(0xb9d3cf) },
@@ -140,6 +143,7 @@ export function createSeaSurface(color: number): SeaSurface {
     side: THREE.DoubleSide,
     vertexShader: `
       uniform float uTime;
+      uniform float uLod;
       varying float vHeight;
       varying vec3 vWorld;
       varying vec3 vNormalW;
@@ -152,18 +156,23 @@ export function createSeaSurface(color: number): SeaSurface {
       }
       void main(){
         vec3 p=position;
-        float e=.28;
         float h=waterHeight(p.xy);
-        float hx=waterHeight(p.xy+vec2(e,0.));
-        float hy=waterHeight(p.xy+vec2(0.,e));
         p.z=h;
         vHeight=h;
-        vNormalW=normalize(normalMatrix*vec3((h-hx)/e,(h-hy)/e,1.));
+        if(uLod<0.5){
+          vNormalW=normalize(normalMatrix*vec3(0.,0.,1.));
+        }else{
+          float e=.28;
+          float hx=waterHeight(p.xy+vec2(e,0.));
+          float hy=waterHeight(p.xy+vec2(0.,e));
+          vNormalW=normalize(normalMatrix*vec3((h-hx)/e,(h-hy)/e,1.));
+        }
         vWorld=(modelMatrix*vec4(p,1.)).xyz;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
       }`,
     fragmentShader: `
       uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSun; uniform float uTime;
+      uniform float uLod;
       uniform vec3 uWake; uniform vec2 uWakeDirection;
       varying float vHeight; varying vec3 vWorld; varying vec3 vNormalW;
       float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
@@ -198,9 +207,9 @@ export function createSeaSurface(color: number): SeaSurface {
       }
       void main(){
         float wakeFoam=0.;
-        float wake=wakeField(vWorld.xz,wakeFoam);
+        float wake=uLod<0.5?0.:wakeField(vWorld.xz,wakeFoam);
         vec3 normal=normalize(vNormalW);
-        if(abs(wake)>0.0005){
+        if(uLod>=0.5&&abs(wake)>0.0005){
           // Slope of the wake field, by central difference in world XZ.
           float step=.35;
           float ignored;
@@ -348,6 +357,7 @@ export function createRiverSurface(curve: THREE.Curve<THREE.Vector3>, options: R
   const color = options.color ?? 0x3f7f86
   const uniforms: WaterUniforms = {
     uTime: { value: 0 },
+    uLod: { value: 1 },
     uDeep: { value: new THREE.Color(color).multiplyScalar(.66) },
     // A river shoals to silt rather than to open-sea turquoise.
     uShallow: { value: new THREE.Color(color).lerp(new THREE.Color(0x8f9c7e), .42) },
@@ -364,7 +374,7 @@ export function createRiverSurface(curve: THREE.Curve<THREE.Vector3>, options: R
     transparent: false,
     side: THREE.DoubleSide,
     vertexShader: `
-      uniform float uTime; uniform float uFlow; uniform float uAmplitude; uniform float uBank;
+      uniform float uTime; uniform float uLod; uniform float uFlow; uniform float uAmplitude; uniform float uBank;
       attribute vec2 aAcross; attribute vec2 aAlong; attribute vec2 aSpan;
       varying float vHeight; varying float vBank; varying vec3 vWorld; varying vec3 vNormalW; varying vec2 vSpan;
       ${noiseChunk(3)}
@@ -384,22 +394,23 @@ export function createRiverSurface(curve: THREE.Curve<THREE.Vector3>, options: R
         float bank=smoothstep(0.,uBank,min(uv.x,1.-uv.x));
         vBank=bank;
         vSpan=aSpan;
-        float e=.22;
         float h=riverHeight(aSpan);
-        float hu=riverHeight(aSpan+vec2(e,0.));
-        float hv=riverHeight(aSpan+vec2(0.,e));
         float amplitude=uAmplitude*bank;
         vec3 p=position;
         p.y+=h*amplitude;
         vHeight=h;
-        // N = up - (dh/dv)*along - (dh/du)*across, from the cross product of the
-        // two surface tangents; the channel frame arrives per vertex so the
-        // gradient computed in ribbon space lands in world space.
         vec3 across3=vec3(aAcross.x,0.,aAcross.y);
         vec3 along3=vec3(aAlong.x,0.,aAlong.y);
-        float du=(hu-h)/e*amplitude;
-        float dv=(hv-h)/e*amplitude;
-        vNormalW=normalize(vec3(0.,1.,0.)-along3*dv-across3*du);
+        if(uLod<0.5){
+          vNormalW=vec3(0.,1.,0.);
+        }else{
+          float e=.22;
+          float hu=riverHeight(aSpan+vec2(e,0.));
+          float hv=riverHeight(aSpan+vec2(0.,e));
+          float du=(hu-h)/e*amplitude;
+          float dv=(hv-h)/e*amplitude;
+          vNormalW=normalize(vec3(0.,1.,0.)-along3*dv-across3*du);
+        }
         vWorld=(modelMatrix*vec4(p,1.)).xyz;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
       }`,

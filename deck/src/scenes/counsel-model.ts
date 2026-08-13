@@ -5,6 +5,7 @@ import { bindHumanoidSkeleton } from '../app-art/rig'
 import { buildStylizedCounsel, type StylizedCounselRig } from '../app-art/stylized-counsel'
 import { retargetHumanoidClips } from './counsel-retarget'
 import { STAGE_COUNSEL_LOOK } from './stage-counsel'
+import { publicUrl } from '../public-url'
 
 /**
  * The counsel who walks on slide 10: the deck's own stylized character, moving
@@ -44,7 +45,7 @@ import { STAGE_COUNSEL_LOOK } from './stage-counsel'
  */
 
 /** Where the motion comes from. See `counsel-retarget` and the models README. */
-const MOTION_URL = '/models/counsel-suit.glb'
+const MOTION_URL = publicUrl('models/counsel-suit.glb')
 
 /** Clip names in the file are `CharacterArmature|<name>`. */
 export type CounselClip = 'Idle_Neutral' | 'Walk' | 'Run_Back'

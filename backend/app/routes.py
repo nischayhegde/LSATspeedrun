@@ -21,6 +21,7 @@ from .game import (
     create_profile,
     pending_review_attempts,
     purchase_asset,
+    release_staff,
     run_rival_operation,
     secure_district,
     select_client,
@@ -344,6 +345,8 @@ def _game_error(code: str):
     messages = {
         "asset_not_found": "That firm item does not exist.",
         "already_owned": "Your firm already owns that item.",
+        "not_owned": "Your firm does not have that person on staff.",
+        "not_staff": "Only hired staff can be released.",
         "requirements_not_met": "Your firm does not meet the listed requirements yet.",
         "insufficient_cash": "Your firm does not have enough cash for that purchase.",
         "maximum_tier": "Your firm has already reached the highest tier.",
@@ -396,6 +399,20 @@ def buy_game_asset():
     asset_key = str((request.get_json(silent=True) or {}).get("asset_key") or "")
     try:
         purchase_asset(profile, asset_key)
+    except ValueError as exc:
+        return _game_error(str(exc))
+    return jsonify({"game": serialize_game(profile)})
+
+
+@api.post("/game/releases")
+@require_auth
+def release_game_staff():
+    profile = _game_profile()
+    if not profile:
+        return error("onboarding_required", "Create your lawyer before changing the roster.", 409)
+    asset_key = str((request.get_json(silent=True) or {}).get("asset_key") or "")
+    try:
+        release_staff(profile, asset_key)
     except ValueError as exc:
         return _game_error(str(exc))
     return jsonify({"game": serialize_game(profile)})

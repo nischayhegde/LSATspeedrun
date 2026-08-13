@@ -40,6 +40,8 @@
  * Small is the design, not a concession. At 44px these are bylines, and the
  * type and the seal carry the weight of the composition.
  */
+import { publicUrl } from '../public-url'
+
 export type Founder = {
   name: string
   /** The original photograph, unmodified. */
@@ -58,8 +60,8 @@ export type Founder = {
 export const PORTRAIT_PX = 44
 
 export const FOUNDERS: readonly Founder[] = [
-  { name: 'Alan Abraham', photo: '/brand/alan.jpg', role: 'Co-founder' },
-  { name: 'Nischay Hegde', photo: '/brand/nischay.jpg', role: 'Co-founder' },
+  { name: 'Alan Abraham', photo: publicUrl('brand/alan.jpg'), role: 'Co-founder' },
+  { name: 'Nischay Hegde', photo: publicUrl('brand/nischay.jpg'), role: 'Co-founder' },
 ]
 
 /**
@@ -70,4 +72,4 @@ export const FOUNDERS: readonly Founder[] = [
  * clip — a crop, which is not a treatment: every pixel that survives it is the
  * pixel the university published.
  */
-export const UT_SEAL = '/brand/ut-seal-source.jpg'
+export const UT_SEAL = publicUrl('brand/ut-seal-source.jpg')

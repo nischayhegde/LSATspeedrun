@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import { demoConfig } from '../../demo.config'
 import { preflight } from '../demo/preflight-strip'
+import { publicUrl } from '../public-url'
 import { SLIDES } from '../slides'
 import { StartScreen } from './start-screen'
 import { useStartGate } from './use-start-gate'
@@ -45,7 +46,7 @@ export function StartGate({ children }: { children: React.ReactNode }) {
     const stills = [...new Set(
       SLIDES.flatMap((slide) => [slide.demo?.still, slide.demo?.toggle?.still])
         .filter((still): still is string => Boolean(still)),
-    )].map((still) => `/stills/${still}`)
+    )].map((still) => publicUrl(`stills/${still}`))
     // The two app routes whose scene modules Vite has to transform on first
     // request. Warmed here so the office slide does not open with a nine-second
     // stall — the job the runbook used to hand to the presenter.

@@ -307,6 +307,7 @@ export function CaseSessionPage() {
   const { sessionId } = useParams()
   const [searchParams] = useSearchParams()
   const deckClientDemo = searchParams.get('deckDemo') === 'client'
+  const deckMegaDemo = searchParams.get('deckDemo') === 'mega'
   const sessionQuery = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => api.session(sessionId!),
@@ -328,6 +329,22 @@ export function CaseSessionPage() {
   if (session.exam && session.status === 'in_progress') {
     return (
       <div className="session-page is-exam">
+        {deckMegaDemo && (
+          <>
+            <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+              <span data-state="complete">01 · Sit</span>
+              <i />
+              <span data-state={session.exam?.stage === 'in_section' ? 'active' : 'complete'}>02 · Section clock</span>
+              <i />
+              <span data-state={session.exam?.stage === 'in_section' ? 'next' : 'active'}>03 · Time stops</span>
+            </div>
+            <div className="deck-demo-caption" aria-live="polite">
+              <small>MEGA · SITTING</small>
+              <strong>{session.exam?.stage === 'in_section' ? '35 minutes, one section, the server’s clock' : 'Section ended. You cannot go back.'}</strong>
+              <span>{session.exam?.stage === 'in_section' ? 'A live item under LSAT section timing. The clock does not pause.' : 'Blanks stay blank. The next section waits behind a gate.'}</span>
+            </div>
+          </>
+        )}
         <Suspense fallback={<LoadingScreen label="Opening the test booklet…" />}>
           <ExamFlow session={session} />
         </Suspense>

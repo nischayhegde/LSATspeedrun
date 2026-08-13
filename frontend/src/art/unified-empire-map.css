@@ -449,3 +449,11 @@
 .uw-district-brief-ledger:hover { color: #fff4d6; border-color: rgba(228, 195, 110, .6); background: rgba(228, 195, 110, .18); }
 .uw-district-brief-ledger i { display: grid; place-items: center; }
 .uw-district-brief-ledger svg { width: 11px; height: 11px; }
+
+.empire-game-page.is-deck-demo { width: 100%; height: 100vh; min-height: 0; padding: 0; overflow: hidden; }
+.empire-game-page.is-deck-demo > .deck-demo-sequence { top: 12px; left: 12px; right: auto; }
+.empire-game-page.is-deck-demo .unified-empire,
+.empire-game-page.is-deck-demo .uw-map-frame { width: 100%; max-width: none; height: 100%; min-height: 0; }
+.empire-game-page.is-deck-demo .uw-world-ledger,
+.empire-game-page.is-deck-demo .uw-arc-navigation { display: none; }
+.empire-game-page.is-deck-demo .uw-map-frame { border: 0; border-radius: 0; }

@@ -159,13 +159,13 @@ was not written down or tested anywhere.
 
 Targeting a *Reading Comprehension* type is the asymmetric case, and worth
 stating because it is only expressible now that a weakness names its section.
-Weak-type share reaches 16.5% rather than 62.4% and the placeholder share goes
-*up*, to 16.6%. Neither is a fault: a reading weakness can only be practised by
-reading a passage, and a passage arrives whole, bringing its other eleven
-question types and its own placeholders with it. The bound in the paragraph
-above is a bound on being squeezed out, which still holds — what does not hold
-for Reading Comprehension is the assumption that a 60% quota can be met at all
-at whole-passage granularity.
+A reading sitting first picks a passage that carries the weak type, then
+fills from those questions — all the matches the passage has, then the rest.
+That is how a weak RC type becomes most of the sitting when the passage
+contains them, rather than a 60% quota pretended across mixed types. The
+placeholder share still goes up relative to an argument case, because the
+passage arrives with its other types; what does not hold is the old
+assumption that a whole-passage fill cannot prefer a type at all.
 
 
 ## Relationship to the layer already registered

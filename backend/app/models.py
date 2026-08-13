@@ -328,12 +328,12 @@ class SessionItem(db.Model):
     # See app/enforcement.py.
     strategy_enforcement_level = db.Column(db.String(12), nullable=False, default="none")
     # Whether this slot was filled with any reference to the question's
-    # difficulty. 'blind' is the truth for every row written so far, because
-    # selection has never read difficulty at all. A selector that starts reading
-    # it must call `calibration.exposure_draw` per slot and write 'random' or
-    # 'targeted' here; leaving the default in place would quietly relabel biased
-    # exposure as unbiased, which is the one error the difficulty estimate
-    # cannot recover from. See `app/calibration.py`.
+    # difficulty. 'blind' is a run whose `difficulty_targeting` arm was off.
+    # On the targeted arm, `calibration.exposure_draw` writes 'random' or
+    # 'targeted' here before the question is chosen. Leaving the default in
+    # place on a targeted slot would quietly relabel biased exposure as
+    # unbiased, which is the one error the difficulty estimate cannot recover
+    # from. See `app/calibration.py`.
     exposure_policy = db.Column(db.String(12), nullable=False, default="blind")
     target_time_seconds = db.Column(db.Integer, nullable=False, default=150)
     game_context_json = db.Column(db.JSON, nullable=True)
