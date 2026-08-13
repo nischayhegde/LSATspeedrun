@@ -343,7 +343,7 @@ function offsetFrom(element: HTMLElement, root: HTMLElement): { x: number; y: nu
   while (node && node !== root) {
     x += node.offsetLeft
     y += node.offsetTop
-    const parent = node.offsetParent
+    const parent: Element | null = node.offsetParent
     if (!(parent instanceof HTMLElement)) return null
     if (parent !== root && !root.contains(parent)) return null
     x += parent.clientLeft
