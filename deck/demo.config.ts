@@ -139,7 +139,7 @@ const FORCE_STILLS = false
  * request only when the framing document and the frame are the same site, and
  * site is compared by host. So the deck's own hostname has to *be* the app
  * origin's hostname. On the presenting machine it is — `localhost:5180` frames
- * `localhost:5174` — and nothing about the live demo changes.
+ * `localhost:5174` — and nothing about the rehearsed live demo changes.
  *
  * Everywhere else it is not, and the old answer was a hardcoded `useStills:
  * false` that made the deck probe `localhost:5174` and embed whatever replied.
@@ -153,14 +153,19 @@ const FORCE_STILLS = false
  * deck as `127.0.0.1:5180` is cross-site to `localhost:5174`, so it used to
  * frame six login screens. Now it shows six stills and the lamp reads `stills`.
  *
- * `?live=1` overrides it, for the case this cannot see: a host alias that is
- * genuinely same-site both ways, reached under a name neither of us guessed.
+ * A public `/pitch/` host is deliberately different. Production disables the
+ * development sign-in that prepares this browser profile, so a same-origin
+ * iframe there can only sit on the app's loading/login shell. Public decks use
+ * the captured product stills by default; `?live=1` remains the explicit
+ * override for an authenticated presenter who intentionally wants live routes.
  */
 export function liveDemoIsPossibleHere(): boolean {
   if (typeof window === 'undefined') return false
   const here = window.location
   if (new URLSearchParams(here.search).has('live')) return true
-  return here.hostname === new URL(APP_ORIGIN).hostname
+  const appHost = new URL(APP_ORIGIN).hostname
+  const local = here.hostname === 'localhost' || here.hostname === '127.0.0.1'
+  return local && here.hostname === appHost
 }
 
 export const demoConfig: DemoConfig = {
