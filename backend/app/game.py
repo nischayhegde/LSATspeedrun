@@ -1265,6 +1265,11 @@ def territory_state(profile: PlayerProfile, held: set[str] | None = None) -> dic
                 "key": region["key"],
                 "name": region["name"],
                 "seat": region["seat"],
+                # Inclusive first/last firm tier this region covers. The live
+                # Firm tab groups catalog addresses under these ranges; without
+                # the field the page throws on `tier_range[0]` and the slide is
+                # a cream shell.
+                "tier_range": list(region["tiers"]),
                 "total": len(keys),
                 "held": sum(1 for key in keys if key in held),
                 "swept": region["key"] in totals["swept_regions"],
@@ -2009,6 +2014,19 @@ def purchase_asset(profile: PlayerProfile, asset_key: str) -> PlayerAsset:
         purchase_price=price,
     )
     db.session.add(asset)
+    # Same-profile restore (stage_demo rewind, a deleted asset row) leaves the
+    # ledger fact behind. `uq_ledger_source` would 500 the next real purchase —
+    # the treasury demo's live click — so replace that stale row rather than
+    # colliding with it. A second click on an owned asset never reaches here.
+    stale = LedgerEntry.query.filter_by(
+        user_id=profile.user_id,
+        kind="asset_purchase",
+        source_id=_scoped_source(profile, asset_key),
+    ).all()
+    for row in stale:
+        db.session.delete(row)
+    if stale:
+        db.session.flush()
     _ledger(profile, "asset_purchase", asset_key, -price, {"name": item["name"], "type": item["type"], "list_cost": item["cost"]})
     db.session.commit()
     return asset

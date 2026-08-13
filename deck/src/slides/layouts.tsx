@@ -124,6 +124,19 @@ function Points({ items, dense }: { items?: string[]; dense?: boolean }) {
   )
 }
 
+/** One large figure for the burnout lockup. `points[0]` is `stat|label`. */
+function BurnoutPunch({ items }: { items?: string[] }) {
+  const item = items?.[0]
+  if (!item) return null
+  const [stat, label] = item.split('|')
+  return (
+    <p className="burnout-punch">
+      <strong>{stat}</strong>
+      <span>{label}</span>
+    </p>
+  )
+}
+
 /**
  * Points as a single middot-separated row.
  *
@@ -177,10 +190,8 @@ function StatementBody({ slide }: BodyProps) {
         <Deck text={slide.deck} />
         <hr className="rule" />
         <Points items={slide.points} />
-        {/* The close is the only statement slide in the deck, and the only one
-            that carries a `pull`: the Q&A prompt it is held on. Set as its own
-            line under the ledger rather than as a blockquote, because it is
-            addressed to the room rather than quoted from anyone. */}
+        {/* Optional Q&A prompt. `close-one-stop-shop` is the last slide and
+            holds `Questions?` under the rule for the whole of Q&A. */}
         {slide.pull ? <p className="statement-pull">{slide.pull}</p> : null}
         <Credit text={slide.credit} />
       </div>
@@ -267,8 +278,37 @@ function DemoBody({ slide, stills, annotations, active }: BodyProps) {
  * The plate is deliberately small and deliberately opaque. A caption laid straight
  * over a busy 3D scene is unreadable at projector contrast however it is set, and
  * every attempt to fix that with a text shadow makes the type look cheap.
+ *
+ * Slide 11 keeps a film-title lockup in the top-left gutter so the standing
+ * counsel, the floor and the contact shadow stay fully visible. Slide 10
+ * centres the lockup with air above the act chrome and below the folio,
+ * so the type is not clipped; the punch is one figure, not a triad.
  */
 function SceneBody({ slide }: BodyProps) {
+  if (slide.scene?.id === 'counsel-stage') {
+    return (
+      <div className="body body-scene body-counsel-stage" data-speaker={slide.speaker}>
+        <div className="counsel-lockup-top">
+          <Eyebrow text={slide.eyebrow} />
+          <Headline text={slide.headline} className="display sm" />
+          <Deck text={slide.deck} />
+        </div>
+      </div>
+    )
+  }
+  if (slide.scene?.id === 'burnout') {
+    return (
+      <div className="body body-scene body-burnout" data-speaker={slide.speaker}>
+        <div className="counsel-lockup-center">
+          <Eyebrow text={slide.eyebrow} />
+          <Headline text={slide.headline} className="display md" />
+          <BurnoutPunch items={slide.points} />
+          <Deck text={slide.deck} />
+          <Credit text={slide.credit} />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="body body-scene" data-speaker={slide.speaker}>
       <div className="caption-plate">
@@ -347,12 +387,21 @@ function MetricsBody({ slide }: BodyProps) {
  * caption is: it should be read once and then stop competing.
  */
 function FigureBody({ slide, active, reduced }: BodyProps) {
+  const claim = (
+    <>
+      <Headline text={slide.headline} className="display lg" />
+      <Deck text={slide.deck} />
+    </>
+  )
   return (
     <div className="body body-figure" data-speaker={slide.speaker}>
       <div className="figure-copy">
         <Eyebrow text={slide.eyebrow} />
-        <Headline text={slide.headline} className="display lg" />
-        <Deck text={slide.deck} />
+        {slide.figure?.kind === 'claim-seal' ? (
+          <div className="figure-claim">{claim}</div>
+        ) : (
+          claim
+        )}
       </div>
       {slide.figure ? (
         <div className="figure-stage">
@@ -361,6 +410,7 @@ function FigureBody({ slide, active, reduced }: BodyProps) {
       ) : null}
       <div className="figure-foot">
         <Fragments items={slide.points} />
+        {slide.pull ? <p className="statement-pull">{slide.pull}</p> : null}
         <Credit text={slide.credit} />
       </div>
     </div>

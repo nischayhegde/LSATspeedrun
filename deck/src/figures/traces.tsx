@@ -1,5 +1,5 @@
 import type { TracesFigure } from './types'
-import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
+import { usePhase, type FigureBody } from './kit'
 
 /**
  * `pov-ai-never-answers` — Bastani's practice gains, the exam that followed, and the
@@ -18,8 +18,8 @@ import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
  * read values off an axis that the study does not support.
  */
 
-/** Cumulative milliseconds. The 1.7s gap after the first mark is the misdirection: draw, then hold. */
-const MARKS = [40, 1740, 3040] as const
+/** Draw the practice gain first, then reveal the exam result and guarded arm. */
+const MARKS = [40, 700, 1350] as const
 
 /**
  * Plot box in viewBox units, with a strip reserved down each side: the left one
@@ -39,152 +39,38 @@ const MARKS = [40, 1740, 3040] as const
  * it a step up and letting it take three lines instead of two costs eight units
  * of strip and buys them back for the fan.
  */
-const PLOT = { left: 19, right: 64, top: 9, bottom: 89 } as const
-
-/** Minimum vertical separation between two right-hand labels, in viewBox units. */
-const LABEL_CLEARANCE = 6.4
-
-/**
- * Headroom above the highest trace and below the lowest, as a share of the
- * data's own span. Enough that a trace end does not touch the frame; not so
- * much that the plot goes back to being mostly empty.
- */
-const DOMAIN_PAD = 0.09
-
 export function Traces({ spec, active, reduced }: FigureBody<TracesFigure>) {
   const phase = usePhase(active, reduced, MARKS)
-
-  // The domain is fitted to the data rather than fixed at 0..1.
-  //
-  // Nothing here is a measurement on a scale — the points are shape, the study's
-  // two numbers live in the standfirst, and there is deliberately no axis (see
-  // the note above about gridlines). A fixed 0..1 domain therefore reserved a
-  // third of the plot's height for values no trace was ever going to visit: the
-  // data ran 0.29 to 0.98, so a fifth of the box sat empty above the fan and a
-  // third below it, and the whole chart read as a band floating in the middle of
-  // a slide. Fitting the domain scales every trace by the same factor, so the
-  // proportion between the rise and the fall — which is the only quantitative
-  // thing the picture claims — is exactly what it was.
-  const values = [spec.baseline, ...spec.traces.flatMap((trace) => trace.points)]
-  const low = Math.min(...values)
-  const high = Math.max(...values)
-  const span = high - low || 1
-  const domain = { low: low - span * DOMAIN_PAD, high: high + span * DOMAIN_PAD }
-  const yOf = (value: number) => {
-    const t = (value - domain.low) / (domain.high - domain.low)
-    return PLOT.bottom - Math.min(Math.max(t, 0), 1) * (PLOT.bottom - PLOT.top)
-  }
-
-  const baselineY = yOf(spec.baseline)
-
-  const traces = spec.traces.map((trace, index) => {
-    const points = trace.points.length > 1 ? trace.points : [trace.points[0] ?? 0, trace.points[0] ?? 0]
-    const path = points
-      .map((value, position) => {
-        const x = PLOT.left + (position / (points.length - 1)) * (PLOT.right - PLOT.left)
-        return `${position === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${yOf(value).toFixed(2)}`
-      })
-      .join(' ')
-    return {
-      ...trace,
-      path,
-      endY: yOf(points[points.length - 1] ?? 0),
-      // Each trace owns a phase: first, then the reveal, then the resolution.
-      revealAt: index + 1,
-    }
-  })
-
-  const labelYs = spreadLabels(traces.map((trace) => trace.endY))
+  const outcome = spec.traces.filter((trace) => trace.style !== 'guarded')
+  const guardrail = spec.traces.find((trace) => trace.style === 'guarded')
 
   return (
     <div className="fig-tr">
-      <svg className="fig-tr-plot" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        {/* Faded in rather than drawn: the dash pattern is the baseline's identity,
-            and a draw-on would have to spend the same `stroke-dasharray` the traces
-            use to reveal themselves. */}
-        <path
-          className="fig-tr-baseline"
-          d={`M ${PLOT.left} ${baselineY} L ${PLOT.right + 2} ${baselineY}`}
-          vectorEffect="non-scaling-stroke"
-          style={{ opacity: phase >= 1 ? 1 : 0 }}
-        />
-        {traces.map((trace) => (
-          <path
-            className="fig-tr-trace"
-            key={trace.label}
-            data-style={trace.style}
-            data-receded={trace.style === 'good' && phase >= 2 ? 'true' : 'false'}
-            d={trace.path}
-            vectorEffect="non-scaling-stroke"
-            style={{ strokeDashoffset: phase >= trace.revealAt ? 0 : DRAW_PX }}
-          />
-        ))}
-      </svg>
-
-      <span
-        className="fig-tr-baseline-label"
-        style={{
-          width: pct((PLOT.left - 3) / 100),
-          top: pct(baselineY / 100),
-          opacity: phase >= 1 ? 1 : 0,
-        }}
-      >
+      <span className="fig-tr-baseline-label" data-in={phase >= 1 ? 'true' : 'false'}>
         {spec.baselineLabel}
       </span>
-
-      {/* The point all three leave from. Without it the control's name in the
-          left strip ranges right against nothing in particular, and the claim
-          the fan makes — same students, same starting line, three ways of
-          working — has no visible origin to make it from. */}
-      <span
-        className="fig-tr-origin"
-        style={{ left: pct(PLOT.left / 100), top: pct(baselineY / 100), opacity: phase >= 1 ? 1 : 0 }}
-      />
-
-      {traces.map((trace, index) => {
-        const receded = trace.style === 'good' && phase >= 2
-        const opacity = phase >= trace.revealAt ? (receded ? 0.55 : 1) : 0
-        return (
-          <div className="fig-tr-mark" key={trace.label} data-style={trace.style}>
-            {/* The dot sits on the trace's true end; the tag may have been nudged
-                clear of a neighbour, so the two are separate elements. */}
-            <span
-              className="fig-tr-end"
-              style={{ left: pct(PLOT.right / 100), top: pct(trace.endY / 100), opacity }}
-            />
-            <span
-              className="fig-tr-tag"
-              style={vars({
-                left: pct((PLOT.right + 2.4) / 100),
-                top: pct((labelYs[index] ?? trace.endY) / 100),
-                opacity,
-              })}
+      <div className="fig-tr-outcomes">
+        {outcome.map((trace, index) => {
+          const [value, label] = trace.label.split(' · ')
+          return (
+            <article
+              className="fig-tr-outcome"
+              data-style={trace.style}
+              data-in={phase >= index + 1 ? 'true' : 'false'}
+              key={trace.label}
             >
-              {trace.label}
-            </span>
-          </div>
-        )
-      })}
+              <strong>{value}</strong>
+              <span>{label}</span>
+            </article>
+          )
+        })}
+      </div>
+      {guardrail ? (
+        <div className="fig-tr-guardrail" data-in={phase >= 3 ? 'true' : 'false'}>
+          <i aria-hidden="true" />
+          <span>{guardrail.label}</span>
+        </div>
+      ) : null}
     </div>
   )
-}
-
-/**
- * Right-hand labels, pushed apart just enough to stop them overprinting.
- *
- * The guarded trace lands exactly on the baseline by design, so two labels sharing
- * a y is the expected case rather than an edge case. Ends are nudged in input
- * order and each label keeps a dot at its trace's true end, so a nudged label
- * still points at the right line.
- */
-function spreadLabels(ends: number[]): number[] {
-  const sorted = ends.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y)
-  let previous = -Infinity
-  const resolved = new Array<number>(ends.length)
-  for (const entry of sorted) {
-    const y = Math.max(entry.y, previous + LABEL_CLEARANCE)
-    resolved[entry.index] = y
-    previous = y
-  }
-  return resolved
 }

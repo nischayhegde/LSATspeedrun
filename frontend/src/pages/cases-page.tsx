@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -9,10 +9,11 @@ import {
   Pause,
   ShieldAlert,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
+import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
 import { ClientPortrait } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
 import { useSound } from '../sound'
@@ -48,9 +49,13 @@ const PRACTICE_TABS: ReadonlyArray<{ key: PracticeTab; label: string }> = [
   { key: 'mega', label: 'Mega-litigation' },
 ]
 
+const namedPracticeTab = (value: string | null): PracticeTab | null =>
+  (PRACTICE_TABS.find((item) => item.key === value)?.key ?? null)
+
 
 export function CasesLobbyPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { play } = useSound()
   const queryClient = useQueryClient()
   const gameQuery = useGame()
@@ -94,7 +99,9 @@ export function CasesLobbyPage() {
   // A mega-litigation starts its clock the moment the form is created, so the
   // creation call sits behind the same gate the dashboard puts it behind.
   const [megaGateOpen, setMegaGateOpen] = useState(false)
-  const [tab, setTab] = useState<PracticeTab>('cases')
+  const deckMegaDemo = searchParams.get('deckDemo') === 'mega'
+  const [tab, setTab] = useState<PracticeTab>(namedPracticeTab(searchParams.get('tab')) ?? (deckMegaDemo ? 'mega' : 'cases'))
+  const [demoBeat, setDemoBeat] = useState(0)
   const selectTab = (next: PracticeTab) => {
     if (next === tab) return
     void play('tab', { seed: `practice:${next}`, intensity: .24 })
@@ -109,6 +116,79 @@ export function CasesLobbyPage() {
     },
   })
   const megaQuery = useQuery({ queryKey: ['diagnostic'], queryFn: api.currentDiagnostic })
+  useEffect(() => {
+    const requested = namedPracticeTab(searchParams.get('tab'))
+    if (requested) setTab(requested)
+    else if (deckMegaDemo) setTab('mega')
+  }, [searchParams, deckMegaDemo])
+  useEffect(() => {
+    if (!deckMegaDemo || gameQuery.isLoading || megaQuery.isLoading) return
+    let cancelled = false
+    const cursor = createDemoCursor()
+    const abort = new AbortController()
+    setTab('mega')
+    setDemoBeat(0)
+    void (async () => {
+      await demoSleep(1_600, abort.signal)
+      if (cancelled) return
+      const panel = await waitForPainted('.mega-panel', 8_000, abort.signal)
+      if (cancelled || !panel) return
+      const clockTerm = panel.querySelector<HTMLElement>('.mega-terms li')
+      if (clockTerm) {
+        cursor.showAt(window.innerWidth * 0.32, window.innerHeight * 0.38)
+        await cursor.hoverClick(clockTerm, { hoverMs: 1_100, moveMs: 620, peek: true, signal: abort.signal })
+      }
+      if (cancelled) return
+      const sit = panel.querySelector<HTMLElement>('.mega-start-button, .mega-resume-button, .mega-panel-actions button')
+      const wouldStartForm = Boolean(sit?.classList.contains('mega-resume-button'))
+      if (sit) {
+        await cursor.hoverClick(sit, {
+          hoverMs: 1_050,
+          moveMs: 480,
+          peek: wouldStartForm,
+          signal: abort.signal,
+        })
+      }
+      if (cancelled) return
+      setDemoBeat(1)
+      const gate = wouldStartForm ? null : await waitForPainted('.mega-gate', 4_000, abort.signal)
+      if (gate) {
+        await demoSleep(2_600, abort.signal)
+        if (cancelled) return
+        const dismiss = document.querySelector<HTMLElement>('.mega-gate-cancel')
+        if (dismiss) await cursor.hoverClick(dismiss, { hoverMs: 700, moveMs: 420, signal: abort.signal })
+        await demoSleep(600, abort.signal)
+      } else {
+        await demoSleep(1_400, abort.signal)
+      }
+      if (cancelled) return
+      setDemoBeat(2)
+      let row = await waitForPainted('.mega-history-row', 5_000, abort.signal)
+      if (!row) {
+        const more = document.querySelector<HTMLElement>('.mega-history-more')
+        if (more) {
+          await cursor.hoverClick(more, { hoverMs: 520, moveMs: 380, signal: abort.signal })
+          row = await waitForPainted('.mega-history-row', 6_000, abort.signal)
+        }
+      }
+      if (cancelled || !row) {
+        cursor.hide()
+        return
+      }
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      await demoSleep(700, abort.signal)
+      if (cancelled) return
+      await cursor.hoverClick(row, { hoverMs: 860, moveMs: 560, signal: abort.signal })
+      await waitForPainted('.mega-result', 6_000, abort.signal)
+      await demoSleep(2_800, abort.signal)
+      cursor.hide()
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+      cursor.destroy()
+    }
+  }, [deckMegaDemo, gameQuery.isLoading, megaQuery.isLoading])
   if (gameQuery.isLoading || activeSessions.isLoading || reviews.isLoading || docketQuery.isLoading) return <LoadingScreen label="Loading…" />
   const game = gameQuery.data!.game!
   const workingClient = effectiveClient(game)
@@ -192,8 +272,30 @@ export function CasesLobbyPage() {
     reviewCount ? `${reviewCount} needs review` : null,
     `${Math.max(0, queueCap - runs.length)} slot${queueCap - runs.length === 1 ? '' : 's'} left`,
   ].filter(Boolean).join(' · ')
+  const megaDemoCopy = [
+    ['Clock, section, one sitting', 'A full practice LSAT: one clock across every block, results held to the end.'],
+    ['Real test conditions', 'One sitting, no pause. The gate is the product — not a film of it.'],
+    ['Time pressure vs reasoning', 'Questions past their split are time. Weak types are reasoning, and they come back.'],
+  ] as const
+
   return (
-    <div className="case-lobby practice-lab page-wrap">
+    <div className="case-lobby practice-lab page-wrap" data-deck-demo={deckMegaDemo ? 'mega' : undefined}>
+      {deckMegaDemo && (
+        <>
+          <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+            <span data-state={demoBeat === 0 ? 'active' : 'complete'}>01 · Full test</span>
+            <i />
+            <span data-state={demoBeat === 1 ? 'active' : demoBeat > 1 ? 'complete' : 'next'}>02 · Test conditions</span>
+            <i />
+            <span data-state={demoBeat === 2 ? 'active' : 'next'}>03 · Diagnosis</span>
+          </div>
+          <div className="deck-demo-caption" key={demoBeat} aria-live="polite">
+            <small>MEGA · {String(demoBeat + 1).padStart(2, '0')}</small>
+            <strong>{megaDemoCopy[demoBeat][0]}</strong>
+            <span>{megaDemoCopy[demoBeat][1]}</span>
+          </div>
+        </>
+      )}
       {partialError && (
         <div className="partial-load-notice">
           <ErrorNotice error={partialError} retrying={partialRetrying} onRetry={retryPartial} />

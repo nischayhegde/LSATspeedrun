@@ -219,10 +219,10 @@ export function AppSceneLayer({ slots }: { slots: AppSceneSlot[] }) {
           // moment it was shown, which is the entire cost warming exists to
           // avoid. And not `opacity: 0` alone, which is what this used to be —
           // an invisible office is still an office, and it kept its animation
-          // loop running at full price. Measured on a full pass: the two slides
-          // either side of `concept-lawyer-tycoon` ran at 20fps while the room
-          // next door drew 363 calls and 272,000 triangles a frame that nobody
-          // could see. Everything else in the deck held 60.
+          // loop running at full price. Measured on a full pass: a warm office
+          // slot used to keep drawing 363 calls and 272,000 triangles a frame
+          // on the slides next to it, which dropped those slides to 20fps.
+          // Everything else in the deck held 60.
           //
           // Parking it off the viewport is what fixes it, because both ported
           // scenes already watch their own canvas with an `IntersectionObserver`

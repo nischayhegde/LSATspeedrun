@@ -51,6 +51,94 @@
 .office-gamebar .training-focus-card button,
 .office-gamebar .training-evidence-card button { min-height: 44px; padding: 9px 13px; border: 2px solid #b88935; font-size: 10px; box-shadow: 3px 3px #9a712b; }
 .client-quest-card { --portrait-overhang: 6px; padding: 12px 12px 20px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.office-page[data-deck-demo='client'],
+.office-page[data-deck-demo='treasury'] {
+  padding: 0;
+  overflow: hidden;
+  min-height: 100vh;
+}
+.office-page[data-deck-demo='client'] .office-world-shell,
+.office-page[data-deck-demo='treasury'] .office-world-shell {
+  max-width: none;
+  height: 100vh;
+}
+.office-page[data-deck-demo='client'] .office-upkeep-strip,
+.office-page[data-deck-demo='client'] .office-milestone-strip,
+.office-page[data-deck-demo='client'] .office-gamebar,
+.office-page[data-deck-demo='client'] .office-mobile-brief-toggle,
+.office-page[data-deck-demo='client'] .office-mobile-scene-status,
+.office-page[data-deck-demo='treasury'] .office-upkeep-strip,
+.office-page[data-deck-demo='treasury'] .office-milestone-strip,
+.office-page[data-deck-demo='treasury'] .office-gamebar,
+.office-page[data-deck-demo='treasury'] .office-mobile-brief-toggle,
+.office-page[data-deck-demo='treasury'] .office-mobile-scene-status {
+  display: none;
+}
+.office-page[data-deck-demo='client'] .office-explorer,
+.office-page[data-deck-demo='treasury'] .office-explorer {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.office-page[data-deck-demo='client'] .av-character-panel,
+.office-page[data-deck-demo='treasury'] .av-character-panel {
+  display: none;
+}
+.office-page[data-deck-demo='client'] .av-office-duo,
+.office-page[data-deck-demo='treasury'] .av-office-duo {
+  gap: 0;
+  height: 100%;
+}
+.office-page[data-deck-demo='client'] .av-room-glass-grade,
+.office-page[data-deck-demo='client'] .av-office-vignette,
+.office-page[data-deck-demo='treasury'] .av-room-glass-grade,
+.office-page[data-deck-demo='treasury'] .av-office-vignette {
+  display: none;
+}
+.office-page[data-deck-demo='client'] .world-zone.zone-case.is-revealed > i {
+  box-shadow: 0 0 0 8px rgba(244, 205, 102, .16), 0 0 24px rgba(244, 205, 102, .72);
+}
+.office-page[data-deck-demo='client'] .world-zone.zone-case > span {
+  min-width: 168px;
+  max-width: 220px;
+}
+.deck-client-sequence {
+  position: fixed;
+  z-index: 40;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(242, 199, 91, .55);
+  background: rgba(8, 18, 29, .9);
+  color: #f7e5b2;
+  box-shadow: 0 8px 22px rgba(4, 9, 16, .28);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: .04em;
+  pointer-events: none;
+  animation: deck-sequence-enter .55s ease both;
+}
+.deck-client-sequence i {
+  width: 22px;
+  border-top: 1px solid #c89b4b;
+}
+@keyframes deck-sequence-enter {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+}
+@keyframes deck-client-focus {
+  to { transform: translateY(-3px); box-shadow: 0 0 0 3px rgba(200, 155, 75, .7), 0 16px 32px rgba(10, 20, 32, .28); }
+}
+@keyframes deck-case-action {
+  to { color: #102735; background: #f2c75b; box-shadow: 0 0 0 4px rgba(242, 199, 91, .24), 3px 3px #121720; }
+}
 .client-quest-card > div { min-width: 0; }
 .client-quest-card p { overflow-wrap: anywhere; }.client-quest-card h3 { margin: 5px 0; color: #1d2935; font-family: var(--font-pixel); font-size: 13px; text-transform: uppercase; }.client-quest-card p { margin: 0; color: #6d5e4b; font-size: 11px; }.client-quest-card button { min-height: 34px; padding: 0 10px; border: 2px solid #121720; color: #f8e6b5; background: #263f50; box-shadow: 3px 3px #121720; font-family: var(--font-pixel); font-size: 10px; font-weight: 900; }.client-quest-card button { display: flex; align-items: center; gap: 5px; }.client-quest-card button svg { width: 12px; }@media (max-width: 1120px) {  .office-upkeep-strip { grid-template-columns: minmax(160px,.55fr) minmax(440px,1.8fr); }
   .office-upkeep-note { grid-column: 1 / 3; text-align: left; }

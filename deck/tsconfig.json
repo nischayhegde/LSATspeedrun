@@ -29,8 +29,9 @@
     // `.gitignore` and README.md already say it lives.
     "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "resolveJsonModule": true,
     "useDefineForClassFields": true
   },
-  "include": ["src", "vite.config.ts", "demo.config.ts"]
+  "include": ["src", "vite.config.ts", "demo.config.ts", "app-origin.mjs"]
 }

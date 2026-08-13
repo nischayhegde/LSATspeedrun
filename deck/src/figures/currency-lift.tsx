@@ -66,7 +66,6 @@ export function CurrencyLift({ spec, active, reduced }: FigureBody<CurrencyLiftF
                 style={vars({ opacity: phase >= 1 ? 1 : 0, '--fig-delay': `${index * 70}ms` })}
               >
                 <b>{row.course}</b>
-                <span>{row.venue}</span>
               </div>
 
               <div className="fig-cl-track">

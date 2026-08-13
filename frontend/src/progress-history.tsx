@@ -150,9 +150,11 @@ export function AttemptDetail({ attemptId, onClose }: { attemptId: string; onClo
 export function AnswerLogPanel({
   questionType: controlledType,
   onQuestionTypeChange,
+  autoOpenFirst = false,
 }: {
   questionType?: string
   onQuestionTypeChange?: (value: string) => void
+  autoOpenFirst?: boolean
 } = {}) {
   const [outcome, setOutcome] = useState<Outcome>('all')
   const [ownType, setOwnType] = useState<string>('')
@@ -174,6 +176,12 @@ export function AnswerLogPanel({
     getNextPageParam: (last) => (last.has_more ? last.offset + last.limit : undefined),
   })
   const attempts: HistoryAttempt[] = history.data?.pages.flatMap((page) => page.attempts) ?? []
+  const autoOpened = useRef(false)
+  useEffect(() => {
+    if (!autoOpenFirst || autoOpened.current || !attempts[0]) return
+    autoOpened.current = true
+    setSelected(attempts[0].attempt_id)
+  }, [attempts, autoOpenFirst])
   const total = history.data?.pages[0]?.total ?? 0
   const counts = facets.data
   // Facets arrive split by section, but the filter below sends `question_type`

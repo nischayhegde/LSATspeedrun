@@ -86,8 +86,8 @@
    progress tick and the grid tile, and nowhere else — an act that
    recolours its body text stops looking like the same deck. */
 [data-section='title'] { --accent: var(--pixel-gold); }
-[data-section='problem'] { --accent: #d8674e; }
-[data-section='thesis'] { --accent: var(--pixel-cyan); }
+[data-section='problem'] { --accent: var(--red); }
+[data-section='thesis'] { --accent: var(--gold); }
 [data-section='product'] { --accent: var(--gold); }
 [data-section='game'] { --accent: var(--pixel-gold); }
 [data-section='close'] { --accent: var(--gold-soft); }
@@ -103,6 +103,16 @@
   position: absolute;
   inset: 0;
   z-index: 0;
+  opacity: 0;
+  visibility: hidden;
+  /* Instant either way. A 180ms fade left the title hero / unused backdrop
+     on screen under the next slide's arriving field. */
+  transition: none;
+}
+
+.deck-stage[data-visible='true'] {
+  opacity: 1;
+  visibility: visible;
 }
 
 .deck-stage-canvas {
@@ -129,7 +139,12 @@
 
 /* A slide layer is the full stage. Only the live one is opaque; the
    other is either mid-transition, in which case the Web Animations
-   fill is holding its opacity, or empty. */
+   fill is holding its opacity, or empty.
+
+   `.is-live { opacity: 1 }` is load-bearing for the first slide. Every
+   later arrival is faded in by a transition; the title never runs one,
+   so without this rule its copy stays at the layer's resting opacity of
+   0 and the WebGL stage shows through it alone. */
 .deck-layer {
   position: absolute;
   inset: 0;
@@ -137,7 +152,33 @@
   transform-origin: 50% 50%;
 }
 
-.deck-layer.is-live { opacity: 1; }
+.deck-layer.is-live {
+  opacity: 1;
+}
+
+.deck-layer:not(.is-live) .demo-copy {
+  opacity: 0 !important;
+  visibility: hidden;
+  animation: none;
+  pointer-events: none;
+}
+
+/* Outgoing demo layers must not clip the incoming product's corner captions.
+   The previous slide's copy is already forced off above; this keeps the
+   layer from cropping a caption that sits on the live iframe underneath. */
+.deck-layer[data-kind='demo'] {
+  overflow: visible;
+}
+
+/* A painted-field slide sitting in the outgoing layer covers the hoisted
+   iframe (z-index 2 under the layers at 3) and clips the product overlays
+   in the corners. Drop that layer the instant a demo is live. Demo-to-demo
+   stays as it was: both layers are glass, and the map's camera move is
+   between two demo slides. */
+.deck-layers:has(.is-live[data-kind='demo']) .deck-layer:not(.is-live):not([data-kind='demo']) {
+  opacity: 0 !important;
+  visibility: hidden;
+}
 
 /* Copy has to survive being laid over a bright 3D scene. Rather than
    shadow the type — which always looks cheap at this size — each layer
@@ -216,7 +257,7 @@
      has somewhere for the eye to rest. The engraved wave is the app's
      own texture and keeps the projector from banding across the blue. */
   background:
-    radial-gradient(128% 96% at 50% -14%, rgba(42, 75, 184, .42), transparent 64%),
+    radial-gradient(128% 96% at 50% -14%, color-mix(in srgb, var(--navy-2) 55%, transparent), transparent 64%),
     radial-gradient(96% 130% at 50% 118%, rgba(9, 16, 42, .74), transparent 58%),
     var(--engraved-wave),
     var(--blue);
@@ -227,7 +268,7 @@
   --on-field: var(--blue);
   /* Not a tint of the blue: a warm grey that reads as ink diluted, which
      is what a hairline credit on paper actually looks like. */
-  --on-field-dim: #6a6a7d;
+  --on-field-dim: var(--muted);
   background:
     radial-gradient(120% 92% at 50% -10%, rgba(255, 253, 247, .9), transparent 60%),
     radial-gradient(100% 120% at 50% 116%, rgba(176, 164, 142, .5), transparent 62%),
@@ -318,7 +359,6 @@
 .hl-glyph {
   display: inline-block;
   transform-origin: 50% 90%;
-  will-change: transform, opacity;
 }
 
 .slide-deck {
@@ -577,13 +617,13 @@
 
 .plate .eyebrow { color: var(--gold-dark); }
 .plate .display { color: var(--navy); }
-.plate .slide-deck { color: #4a5560; max-width: none; }
+.plate .slide-deck { color: var(--muted); max-width: none; }
 .plate .rule { margin: calc(2 * var(--u)) 0 0; }
-.plate .ledger li { color: #2b333c; border-bottom-color: rgba(24, 39, 53, .16); }
+.plate .ledger li { color: var(--ink); border-bottom-color: rgba(24, 39, 53, .16); }
 .plate .ledger i { color: var(--gold-dark); }
-.plate .slide-credit { color: #5c6570; border-top-color: rgba(24, 39, 53, .2); opacity: 1; }
+.plate .slide-credit { color: var(--muted); border-top-color: rgba(24, 39, 53, .2); opacity: 1; }
 .plate .pull p { color: var(--navy-2); }
-.plate .pull cite { color: #5c6570; opacity: 1; }
+.plate .pull cite { color: var(--muted); opacity: 1; }
 
 /* ----------------------------------------------------------------
    THE CLOSE — the last slide, and the only one that takes the statement
@@ -626,51 +666,52 @@
    is written for DOM copy over a bright scene; there is no DOM copy here to
    seat, and a gradient over the left third now only dims the lettering that
    stands in it and the shadow the slide exists to show. */
-.deck-layer[data-section='close'] { --scrim: none; }
+.deck-layer[data-slide='close-one-stop-shop'] { --scrim: none; }
 
-/* ----------------------------------------------------------------
-   THE CLOSE'S COPY IS NOT IN THE DOM
-
-   It is geometry, standing in the room, in `close-room-scene.ts` —
-   the founders asked for lettering immersed in the scene rather than
-   floating on top of it, and `room-lettering.ts` carries the argument
-   for why the whole block moved rather than just the headline.
-
-   The plate is still rendered, and still carries the eyebrow, the
-   headline, the deck sentence and `Questions?` in that order, because
-   a canvas is opaque to assistive technology and to find-in-page, and
-   because `layouts.tsx` should not need a special case for one slide.
-   This hides it from sighted eyes only.
-
-   Not `display: none`, which would take it out of the accessibility
-   tree along with the picture, and not `opacity: 0`, which leaves a
-   46% column of invisible text sitting over the stage swallowing the
-   click zones that page the deck.
-   ---------------------------------------------------------------- */
-.deck-layer[data-section='close'] .plate {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
+/* The one-stop-shop keeps the character and shadow in WebGL, but the words are
+   screen-space type. World-space lettering introduced a camera angle, softened
+   the glyph edges and clipped on narrower windows; none of those effects helped
+   the claim. */
+.deck-layer[data-slide='close-one-stop-shop'] .plate {
+  width: min(calc(42 * var(--u)), 48%);
+  margin: 0;
   padding: 0;
   border: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  /* `plate-in` slides a card in, and there is no card. */
-  animation: none;
+  background: none;
+  box-shadow: none;
+}
+.deck-layer[data-slide='close-one-stop-shop'] .plate::after { content: none; }
+
+.deck-layer[data-slide='close-one-stop-shop'] .body-statement {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  padding-left: calc(6.4 * var(--u));
 }
 
-/* `Questions?` — the Q&A prompt, and the last thing the deck says.
-   Set at headline weight but a step down in size, in gold rather than beige,
-   with air above it. Since the close's ledger was cut it is the only thing
-   under the rule, which is the weight it wants: it is the sentence the
-   founders stop talking on and the room answers.
+.deck-layer[data-slide='close-one-stop-shop'] .display {
+  max-width: 12ch;
+  font-size: calc(5.1 * var(--u));
+  line-height: .92;
+  letter-spacing: -.035em;
+  color: var(--beige);
+  text-wrap: balance;
+}
 
-   Not scoped to the close, because `layouts.tsx` renders it for any statement
-   slide carrying a `pull` — but the close is the only one today, and the gold
-   is picked against the close's beige-on-blue. A second one on the paper plate
-   would want `--gold-dark`. */
+.deck-layer[data-slide='close-one-stop-shop'] .slide-deck {
+  max-width: 34ch;
+  margin-top: calc(2.1 * var(--u));
+  font-size: calc(1.45 * var(--u));
+  line-height: 1.35;
+  color: var(--beige-dim);
+}
+
+.deck-layer[data-slide='close-one-stop-shop'] .rule {
+  width: min(100%, calc(31 * var(--u)));
+  margin: calc(2.4 * var(--u)) 0 calc(1.7 * var(--u));
+}
+
+/* `Questions?` — the Q&A prompt on `close-one-stop-shop`. Gold against the
+   close-room; gold-dark if a figure foot ever carries it. */
 .statement-pull {
   margin: calc(2.6 * var(--u)) 0 0;
   font-family: var(--font-display);
@@ -679,6 +720,10 @@
   letter-spacing: var(--track-display);
   line-height: 1;
   color: var(--gold);
+}
+
+.body-figure .statement-pull {
+  color: var(--gold-dark);
 }
 
 
@@ -853,6 +898,235 @@
 
 .caption-plate .ledger.is-dense li { font-size: calc(1.14 * var(--u)); }
 .caption-plate .display { color: var(--gold-soft); }
+
+/* Slide 10: lockup over a navy room. Chrome stays in its normal place.
+   Full-bleed canvas — no inset band, no letterbox, no hairline seam. */
+.deck-layer[data-slide='concept-lawyer-tycoon'] {
+  --scrim: none;
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* The pulled POV arrives as itself: a 2D layer, identity transform, no 3D parent.
+   The sheet is a rectangle; the seal is sized inside it, so this clip is the
+   paper edge, not the rings. */
+.deck-layer[data-slide='pov-graded-question'] {
+  perspective: none;
+  transform-style: flat;
+  overflow: hidden;
+}
+
+.deck:has(.deck-layer.is-live[data-slide='concept-lawyer-tycoon']) .deck-vignette,
+.deck[data-counsel-scene] .deck-vignette,
+.deck:has(.deck-layer.is-live[data-slide='concept-lawyer-tycoon']) .deck-grain,
+.deck[data-counsel-scene] .deck-grain,
+.deck:has(.deck-layer.is-live[data-slide='concept-lawyer-tycoon']) .deck-scanlines,
+.deck[data-counsel-scene] .deck-scanlines {
+  opacity: 0;
+}
+
+.deck[data-counsel-scene] {
+  background: #102735;
+}
+
+.deck[data-counsel-scene] .deck-stage,
+.deck[data-counsel-scene] .deck-stage-canvas {
+  inset: 0;
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.deck[data-counsel-scene] .deck-stage-canvas {
+  pointer-events: none;
+}
+
+.body-scene.body-counsel-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-content: stretch;
+  justify-content: stretch;
+  justify-items: start;
+  text-align: left;
+  padding-top: calc(2.2 * var(--u));
+  padding-bottom: calc(2.4 * var(--u));
+  padding-left: calc(5.2 * var(--u));
+  padding-right: calc(38 * var(--u));
+}
+
+.body-counsel-stage .eyebrow {
+  justify-content: flex-start;
+  margin: 0;
+  color: var(--gold);
+}
+
+.body-counsel-stage .eyebrow::after {
+  content: none;
+}
+
+.body-counsel-stage .display {
+  max-width: none;
+  color: var(--gold-soft);
+  text-wrap: balance;
+  /* No 3D parent: `.display` otherwise carries `perspective: 900px` for the
+     type transition, which puts this lockup in the same compositor as the
+     canvas and is the shake on open. */
+  perspective: none;
+  text-shadow:
+    0 .022em 0 rgba(104, 68, 16, .5),
+    0 .045em 0 rgba(104, 68, 16, .3),
+    0 .07em .55em rgba(242, 199, 91, .18);
+}
+
+.body-counsel-stage .slide-deck {
+  max-width: 36ch;
+  margin-top: calc(.35 * var(--u));
+  color: var(--paper);
+  opacity: .78;
+  text-align: left;
+}
+
+.body-scene.body-burnout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  place-items: center;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  /* One centred lockup. Papers occupy the lower third and the sides;
+     citations travel with the type so a floor sheet cannot cover them. */
+  padding-top: calc(3.4 * var(--u));
+  padding-bottom: calc(5.2 * var(--u));
+  padding-left: calc(12 * var(--u));
+  padding-right: calc(12 * var(--u));
+}
+
+.body-burnout .eyebrow {
+  justify-content: center;
+  margin: 0;
+  color: var(--gold);
+}
+
+.body-burnout .eyebrow::before,
+.body-burnout .eyebrow::after { content: none; }
+
+.body-burnout .display {
+  max-width: 20ch;
+  font-size: calc(3.45 * var(--u));
+  line-height: 1.06;
+  color: var(--gold-soft);
+  text-wrap: balance;
+  perspective: none;
+  text-shadow:
+    0 .022em 0 rgba(104, 68, 16, .5),
+    0 .045em 0 rgba(104, 68, 16, .3),
+    0 .07em .55em rgba(242, 199, 91, .18);
+}
+
+.body-burnout .slide-deck {
+  max-width: 24ch;
+  margin-top: calc(.4 * var(--u));
+  color: var(--paper);
+  opacity: .78;
+  text-align: center;
+}
+
+.body-burnout .slide-credit {
+  margin-top: calc(1.1 * var(--u));
+  padding-top: 0;
+  border-top: 0;
+  color: var(--paper);
+  opacity: .55;
+  text-align: center;
+  max-width: 36ch;
+}
+
+.counsel-lockup-center {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: calc(.55 * var(--u));
+  width: min(100%, 36ch);
+  /* Own compositor layer, identity transform, never rewritten. Same pin
+     as the Act II counsel lockup: the canvas paints every frame and
+     without this the type inherits that invalidation and shakes. */
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  isolation: isolate;
+}
+
+.deck-layer[data-slide='pov-volume-burns'] .counsel-lockup-center {
+  position: relative;
+  z-index: 4;
+}
+
+.burnout-punch {
+  display: grid;
+  justify-items: center;
+  gap: calc(.45 * var(--u));
+  margin: calc(.7 * var(--u)) 0 0;
+}
+
+.burnout-punch strong {
+  font-family: var(--font-display);
+  font-size: calc(4.8 * var(--u));
+  font-weight: 650;
+  letter-spacing: -.03em;
+  line-height: .95;
+  color: var(--gold-soft);
+}
+
+.burnout-punch span {
+  font-family: var(--font-ui);
+  font-size: var(--t-deck);
+  letter-spacing: .02em;
+  text-transform: none;
+  max-width: 22ch;
+  text-wrap: balance;
+  color: var(--paper);
+  opacity: .78;
+}
+
+.deck-layer[data-slide='pov-volume-burns'] {
+  --scrim: none;
+  outline: none;
+  border: 0;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) {
+  background: #102735;
+}
+
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) .deck-stage,
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) .deck-stage-canvas {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) .deck-vignette,
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) .deck-grain,
+.deck:has(.deck-layer.is-live[data-slide='pov-volume-burns']) .deck-scanlines {
+  opacity: 0;
+}
+
+.counsel-lockup-top {
+  display: grid;
+  justify-items: start;
+  gap: calc(.45 * var(--u));
+  grid-row: 1;
+  max-width: 42ch;
+  /* Own compositor layer, identity transform, never rewritten. The WebGL
+     canvas under this slide paints every frame (idle clip); without a
+     pinned layer the lockup inherits that invalidation and shakes. */
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  isolation: isolate;
+}
 
 /* ================================================================
    BODY — SPLIT
@@ -1057,7 +1331,7 @@
   letter-spacing: .16em;
   text-transform: uppercase;
   border: 1px solid currentColor;
-  color: #8fa3ae;
+  color: var(--gold-soft);
 }
 
 .demo-lamp::before {
@@ -1069,11 +1343,11 @@
   box-shadow: 0 0 .7em currentColor;
 }
 
-.demo-lamp.is-live { color: #6fd3a4; }
+.demo-lamp.is-live { color: var(--pixel-green); }
 .demo-lamp.is-connecting { color: var(--pixel-gold); animation: lamp-blink 1.1s steps(2) infinite; }
-.demo-lamp.is-stills { color: #8fb6d6; }
+.demo-lamp.is-stills { color: var(--gold); }
 .demo-lamp.is-app-not-running,
-.demo-lamp.is-no-seeded-session { color: #e0705f; }
+.demo-lamp.is-no-seeded-session { color: var(--pixel-red); }
 
 @keyframes lamp-blink { 50% { opacity: .42; } }
 
@@ -1128,17 +1402,17 @@
   gap: calc(.8 * var(--u));
   opacity: 0;
   visibility: hidden;
-  transform: translate(-50%, -50%) scale(.94);
+  transform: translate(-50%, -50%);
   transition:
     opacity var(--mo-2) var(--ease-out),
-    transform var(--mo-2) var(--ease-spring),
+    transform var(--mo-2) var(--ease-out),
     visibility 0s linear var(--mo-2);
 }
 
 .demo-callout.is-shown {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translate(-50%, -50%);
   transition-delay: 0s, 0s, 0s;
 }
 
@@ -1153,7 +1427,7 @@
   box-shadow: 0 0 0 3px rgba(242, 199, 91, .28), 0 0 0 6px rgba(242, 199, 91, .12);
 }
 
-.is-shown .demo-callout-pin { animation: pin-ping 2.4s var(--ease-out) infinite; }
+.is-shown .demo-callout-pin { animation: none; }
 
 @keyframes pin-ping {
   0%, 72%, 100% { box-shadow: 0 0 0 3px rgba(242, 199, 91, .28), 0 0 0 6px rgba(242, 199, 91, .12); }
@@ -1445,6 +1719,61 @@
 .zone-next::after { background: linear-gradient(270deg, rgba(242, 199, 91, .14), transparent); }
 .zone:hover { opacity: 1; }
 
+/* Live demo slides: chrome is off the product until an edge is hovered.
+   Sensors are invisible hit areas; they never paint. Hits are the empty
+   top/bottom strips that advance once chrome is actually up. */
+.demo-chrome-sensor,
+.demo-chrome-hit {
+  position: absolute;
+  z-index: 885;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.demo-chrome-sensor-top,
+.demo-chrome-hit-top { top: 0; left: 0; right: 0; height: calc(4.8 * var(--u)); }
+.demo-chrome-sensor-bottom,
+.demo-chrome-hit-bottom { bottom: 0; left: 0; right: 0; height: calc(5.2 * var(--u)); }
+.demo-chrome-sensor-left { top: 0; bottom: 0; left: 0; width: calc(4.2 * var(--u)); }
+.demo-chrome-sensor-right { top: 0; bottom: 0; right: 0; width: calc(4.2 * var(--u)); }
+
+.deck[data-demo-slide][data-demo-chrome='off'] .deck-progress,
+.deck[data-demo-slide][data-demo-chrome='off'] .deck-folio,
+.deck[data-demo-slide][data-demo-chrome='off'] .zone,
+.deck[data-demo-slide][data-demo-chrome='off'] .body-demo .demo-copy {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.deck[data-demo-slide][data-demo-chrome='off'] .deck-progress,
+.deck[data-demo-slide][data-demo-chrome='off'] .deck-folio,
+.deck[data-demo-slide][data-demo-chrome='off'] .demo-chrome-hit-bottom {
+  transform: translate3d(0, calc(.55 * var(--u)), 0);
+}
+
+.deck[data-demo-slide][data-demo-chrome='off'] .body-demo .demo-copy,
+.deck[data-demo-slide][data-demo-chrome='off'] .demo-chrome-hit-top {
+  transform: translate3d(0, calc(-.55 * var(--u)), 0);
+}
+
+.deck[data-demo-slide] .deck-progress,
+.deck[data-demo-slide] .deck-folio,
+.deck[data-demo-slide] .zone,
+.deck[data-demo-slide] .body-demo .demo-copy {
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    transform var(--mo-3) var(--ease-out);
+}
+
+.deck[data-demo-slide][data-demo-chrome='on'] .zone {
+  pointer-events: auto;
+}
+
+.deck[data-demo-slide][data-demo-chrome='on'] .demo-chrome-sensor {
+  pointer-events: none;
+}
+
 /* The progress hairline: one tick per slide, heavier at each act
    boundary. The only permanent chrome on the audience's screen. */
 .deck-progress {
@@ -1503,7 +1832,7 @@
   font-family: var(--font-pixel);
   font-size: calc(.86 * var(--u));
   letter-spacing: .08em;
-  color: #93a6b2;
+  color: var(--gold-soft);
   pointer-events: none;
 }
 
@@ -1558,7 +1887,7 @@
 .presenter-count {
   font-family: var(--font-pixel);
   font-size: 13px;
-  color: #8fa3ae;
+  color: var(--gold-soft);
 }
 
 .presenter header button {
@@ -1589,13 +1918,13 @@
   display: block;
   margin-top: 6px;
   font-size: 12px;
-  color: #93a6b2;
+  color: var(--gold-soft);
 }
 
 .pace { font-style: normal; font-weight: 700; }
-.pace.is-ahead { color: #6fd3a4; }
+.pace.is-ahead { color: var(--pixel-green); }
 .pace.is-on-pace { color: var(--pixel-gold); }
-.pace.is-behind { color: #e0705f; }
+.pace.is-behind { color: var(--pixel-red); }
 
 /* One bar, two marks: where the talk is, and where it was meant to be. */
 .presenter-bar {
@@ -1655,7 +1984,7 @@
 }
 
 .presenter-notes dt {
-  color: #7f929e;
+  color: var(--muted);
   letter-spacing: .12em;
   text-transform: uppercase;
 }
@@ -1675,7 +2004,7 @@
   font-weight: 700;
   letter-spacing: .26em;
   text-transform: uppercase;
-  color: #7f929e;
+  color: var(--muted);
 }
 
 .presenter-next b {
@@ -1685,7 +2014,7 @@
   color: var(--beige);
 }
 
-.presenter-next small { font-family: var(--font-pixel); font-size: 11px; color: #7f929e; }
+.presenter-next small { font-family: var(--font-pixel); font-size: 11px; color: var(--muted); }
 
 .presenter footer {
   display: flex;
@@ -1699,7 +2028,7 @@
   border-radius: 2px;
   font-family: var(--font-pixel);
   font-size: 11px;
-  color: #8fa3ae;
+  color: var(--gold-soft);
 }
 
 .presenter footer code.is-on {
@@ -1711,7 +2040,7 @@
    sentence, to decide whether to reach for the mouse: green means the embed can
    be clicked, gold means the screen is a photograph. Replaces the lamp that used
    to sit in the demo chrome where the audience could read it too. */
-.presenter dd.is-on { color: #6fd3a4; }
+.presenter dd.is-on { color: var(--pixel-green); }
 .presenter dd.is-warn { color: var(--pixel-gold); }
 
 .presenter-keys {
@@ -1723,7 +2052,7 @@
   border-top: 1px solid rgba(216, 208, 194, .16);
   list-style: none;
   font-size: 12px;
-  color: #93a6b2;
+  color: var(--gold-soft);
 }
 
 .presenter-keys li { display: flex; align-items: center; gap: 5px; }
@@ -1783,7 +2112,7 @@ kbd {
   font-size: 12px;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: #7f929e;
+  color: var(--muted);
 }
 
 .grid-overview header button {
@@ -1880,7 +2209,7 @@ kbd {
   font-size: 10px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: #7f929e;
+  color: var(--muted);
 }
 
 .grid-tile-hash {
@@ -1901,6 +2230,7 @@ kbd {
    keeps moving under a speaker keeps pulling the eye off the speaker. */
 
 .is-live .eyebrow { animation: rise var(--mo-3) var(--ease-out) both; }
+.is-live .display { animation: rise var(--mo-3) var(--ease-out) 40ms both; }
 .is-live .slide-deck { animation: rise var(--mo-3) var(--ease-out) 120ms both; }
 .is-live .pull,
 .is-live .pull-quiet,
@@ -1925,8 +2255,148 @@ kbd {
 }
 
 @keyframes plate-in {
-  from { opacity: 0; transform: translate3d(0, calc(1 * var(--u)), 0) scale(.985); }
+  from { opacity: 0; transform: translate3d(0, calc(.6 * var(--u)), 0); }
   to { opacity: 1; transform: none; }
+}
+
+/* Slide 10 lockup: no rise. Opacity+translate on open is the shake — the
+   type has to be still from the first frame, on its own layer above the
+   canvas. The hauled sheet (`pov-graded-question`) is the same rule: the
+   paper is already in frame as a strip, so nothing on it may enter. */
+.deck-layer[data-slide='concept-lawyer-tycoon'] .eyebrow,
+.deck-layer[data-slide='concept-lawyer-tycoon'] .display,
+.deck-layer[data-slide='concept-lawyer-tycoon'] .slide-deck,
+.deck-layer[data-slide='pov-volume-burns'] .eyebrow,
+.deck-layer[data-slide='pov-volume-burns'] .display,
+.deck-layer[data-slide='pov-volume-burns'] .slide-deck,
+.deck-layer[data-slide='pov-volume-burns'] .burnout-punch,
+.deck-layer[data-slide='pov-volume-burns'] .slide-credit,
+.deck-layer[data-slide='pov-graded-question'] .eyebrow,
+.deck-layer[data-slide='pov-graded-question'] .display,
+.deck-layer[data-slide='pov-graded-question'] .slide-deck,
+.deck-layer[data-slide='pov-graded-question'] .figure-claim,
+.deck-layer[data-slide='pov-graded-question'] .slide-credit {
+  animation: none;
+}
+
+/* ================================================================
+   `pov-graded-question` — centred claim on a foil seal
+   The stamp and the claim share the sheet centre. The eyebrow sits in
+   the top inset, the credit in the bottom, so neither collides with
+   the rings or the progress hairline. Glyphs stay un-split so a
+   translateX of the sheet cannot round each letter onto a different
+   pixel.
+   ================================================================ */
+
+.deck-layer[data-slide='pov-graded-question'] .body-figure {
+  grid-template-rows: 1fr;
+  padding: 0;
+  place-items: center;
+  overflow: visible;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .figure-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .figure-copy {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  place-content: center;
+  /* Keep the claim inside the inner foil ring, not on it. */
+  padding: 18%;
+  pointer-events: none;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .figure-claim {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: calc(.7 * var(--u));
+  width: min(16ch, 58%);
+  text-align: center;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .figure-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--gutter) * .85);
+  z-index: 1;
+  padding-bottom: 0;
+}
+
+/* Headline, gold rule, and deck line are one optically centred stack
+   inside the seal opening. No upward nudge — that parked the claim
+   high and left the deck sentence on the ring. */
+.deck-layer[data-slide='pov-graded-question'] .display {
+  position: relative;
+  font-size: calc(2.55 * var(--u));
+  line-height: 1.12;
+  letter-spacing: -.024em;
+  max-width: 12ch;
+  text-wrap: balance;
+  perspective: none;
+  transform: none;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .display::after {
+  content: '';
+  display: block;
+  position: static;
+  width: 2.4em;
+  height: 1px;
+  margin: .7em auto 0;
+  background: var(--gold);
+  opacity: .78;
+}
+
+.deck-layer[data-slide='pov-graded-question'] .slide-deck {
+  margin: 0;
+  max-width: 16ch;
+  font-size: calc(1.12 * var(--u));
+  line-height: 1.28;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--navy-2);
+}
+
+.deck-layer[data-slide='pov-graded-question'] .hl-word,
+.deck-layer[data-slide='pov-graded-question'] .hl-glyph {
+  display: inline;
+  transform: none;
+}
+
+.deck-layer[data-slide='pov-graded-question'][data-field='beige'] .eyebrow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--gutter) * .7);
+  bottom: auto;
+  margin: 0;
+  justify-content: center;
+  color: var(--gold);
+}
+
+.deck-layer[data-slide='pov-graded-question'] .eyebrow::before,
+.deck-layer[data-slide='pov-graded-question'] .eyebrow::after {
+  flex: 0 0 calc(2.1 * var(--u));
+}
+
+.deck-layer[data-slide='pov-graded-question'] .eyebrow::before {
+  content: '';
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor);
+  opacity: .55;
 }
 
 /* ================================================================
@@ -2051,6 +2521,14 @@ kbd {
    baseline whether a credit follows it or not. */
 .body-figure:not(:has(.slide-credit)) .figure-foot {
   padding-bottom: calc(var(--t-credit) * 1.45 + var(--s-1));
+}
+
+.body-figure:has(.fig-gate) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.body-figure:has(.fig-gate) .figure-foot {
+  display: none;
 }
 
 /* On a field slide the eyebrow drops the gold. The narrative's palette is
@@ -2250,7 +2728,7 @@ kbd {
   font-size: calc(1 * var(--u));
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: #f0a08e;
+  color: var(--pixel-red);
 }
 
 .deck-qa-open-what {
@@ -2378,7 +2856,7 @@ kbd {
   color: var(--beige-dim);
 }
 
-.deck-qa-source { color: #8f9bb2; word-break: break-word; }
+.deck-qa-source { color: var(--muted); word-break: break-word; }
 .deck-qa-source + .deck-qa-source::before { content: '· '; }
 
 .deck-qa-warning-number,
@@ -2400,7 +2878,7 @@ kbd {
 }
 
 .deck-qa-warning[data-status='open'] { border-left-color: var(--stamp); }
-.deck-qa-warning[data-status='open'] .deck-qa-warning-status { color: #f0a08e; }
+.deck-qa-warning[data-status='open'] .deck-qa-warning-status { color: var(--pixel-red); }
 
 .deck-qa-warning-action {
   margin: calc(.6 * var(--u)) 0 0;
@@ -2436,7 +2914,7 @@ kbd {
   font-weight: 400;
   letter-spacing: .1em;
   text-transform: uppercase;
-  color: #f0a08e;
+  color: var(--pixel-red);
 }
 
 .deck-qa-nocut-note {

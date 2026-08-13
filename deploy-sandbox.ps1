@@ -10,8 +10,8 @@ param(
     [string]$Remote = "origin",
     [ValidateRange(5, 59)]
     [int]$PollSeconds = 10,
-    [ValidateRange(5, 30)]
-    [int]$BootstrapTimeoutMinutes = 15
+    [ValidateRange(5, 45)]
+    [int]$BootstrapTimeoutMinutes = 28
 )
 
 Set-StrictMode -Version Latest
@@ -597,6 +597,22 @@ try {
         Pop-Location
     }
 
+    Write-Step "Building the pitch deck"
+    Push-Location (Join-Path $repoRoot "deck")
+    try {
+        $env:DECK_BASE = "/pitch/"
+        Invoke-External -FilePath $npmExecutable -ArgumentList @("ci")
+        Invoke-External -FilePath $npmExecutable -ArgumentList @("run", "build")
+        $deckIndex = Get-Content -LiteralPath (Join-Path (Get-Location) "dist/index.html") -Raw
+        if ($deckIndex -notmatch '/pitch/assets/') {
+            throw "The deck production build did not emit assets under /pitch/."
+        }
+    }
+    finally {
+        Remove-Item Env:DECK_BASE -ErrorAction SilentlyContinue
+        Pop-Location
+    }
+
     Write-Step "Building the Lambda worker"
     $artifactPath = Join-Path $repoRoot "deploy\ec2\dist\ai-worker.zip"
     & (Join-Path $repoRoot "deploy\ec2\build-lambda.ps1") -OutputPath $artifactPath -PythonPath $venvPython
@@ -837,6 +853,33 @@ try {
     if ($indexResponse.StatusCode -ne 200 -or $indexResponse.Content -notmatch '<title>Lawyer Tycoon</title>') {
         throw "CloudFront is not serving the Lawyer Tycoon frontend."
     }
+    if ($indexResponse.Content -notmatch 'createDemoCursor|deckDemo|autoplay') {
+        $assetMatches = [regex]::Matches($indexResponse.Content, '/assets/[^"]+\.js')
+        $foundDemoHook = $false
+        foreach ($assetMatch in $assetMatches) {
+            try {
+                $asset = Invoke-WebRequest -Uri "$($applicationUrl.TrimEnd('/'))$($assetMatch.Value)" -UseBasicParsing -TimeoutSec 30
+                if ($asset.Content -match 'createDemoCursor|deckDemo') {
+                    $foundDemoHook = $true
+                    break
+                }
+            }
+            catch {
+                continue
+            }
+        }
+        if (-not $foundDemoHook) {
+            throw "The deployed frontend is missing live-demo hooks (deckDemo/createDemoCursor)."
+        }
+    }
+    $pitchResponse = Invoke-WebRequest -Uri "$($applicationUrl.TrimEnd('/'))/pitch/" -UseBasicParsing -TimeoutSec 30
+    if (
+        $pitchResponse.StatusCode -ne 200 -or
+        $pitchResponse.Content -notmatch '/pitch/assets/' -or
+        $pitchResponse.Content -notmatch 'Company presentation'
+    ) {
+        throw "CloudFront is not serving the pitch deck at /pitch/."
+    }
     $authConfig = Invoke-RestMethod -Uri "$($applicationUrl.TrimEnd('/'))/v1/auth/config" -TimeoutSec 30
     if (-not $authConfig.google_client_id -or $authConfig.dev_auth_enabled) {
         throw "Production authentication is not configured safely."
@@ -1010,12 +1053,36 @@ try {
         -Deadline ((Get-Date).AddMinutes(5))
     $workerPaused = $false
 
+    Write-Step "Provisioning the Google demo account on RDS"
+    $provisionParameters = @{
+        InstanceId = $instanceId
+        Comment = "Provision deployed Google demo account"
+        TimeoutSeconds = 600
+        Commands = @(
+            "set -euo pipefail; set -a; . /etc/lsat-speedrun.env; set +a; export ALLOW_DEPLOYED_DEMO_SEED=1; cd /opt/lsat-speedrun/backend; /opt/lsat-speedrun/.venv/bin/python scripts/provision_deployed_demo.py --apply --email alanmakeel@gmail.com"
+        )
+    }
+    $provisionInvocation = Invoke-SsmCommandAndWait @provisionParameters
+    $provisionLines = @(
+        ([string]$provisionInvocation.StandardOutputContent -split "`r?`n") |
+            Where-Object { $_.Trim().StartsWith("{") }
+    )
+    if ($provisionLines.Count -lt 1) {
+        throw "Demo account provisioning did not return a JSON result."
+    }
+    $provisionResult = $provisionLines[-1] | ConvertFrom-Json
+    if (-not $provisionResult.sessions.liveSessionId -or -not $provisionResult.sessions.soloSessionId) {
+        throw "Demo account provisioning did not write live session ids."
+    }
+
     Write-Host "`nDeployment complete." -ForegroundColor Green
     Write-Host "Application: $applicationUrl"
+    Write-Host "Pitch:      $($applicationUrl.TrimEnd('/'))/pitch/"
     Write-Host "Commit:     $commitSha"
     Write-Host "EC2:        $instanceId"
     Write-Host "Lambda:     $lambdaFunction"
     Write-Host "AI smoke:   $($smokeResult.model), score $($smokeResult.score), exactly-once payout verified"
+    Write-Host "Demo user:  $($provisionResult.email) ($($provisionResult.merge.action))"
 }
 catch {
     $deploymentError = $_

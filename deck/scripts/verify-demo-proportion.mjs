@@ -59,6 +59,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -69,7 +70,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
   return [match[1], match[2] ?? '']
 }))
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const STILLS = flags.has('stills')
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/proportion')

@@ -234,11 +234,6 @@ export function ClockRings({ spec, active, reduced }: FigureBody<ClockRingsFigur
           aria-hidden="true"
         >
           <path
-            className="fig-cr-frame-track"
-            d={frameRingPath(frame.w, frame.h)}
-            strokeWidth={FRAME_RING.weight}
-          />
-          <path
             className="fig-cr-frame-arc"
             d={frameRingPath(frame.w, frame.h)}
             strokeWidth={FRAME_RING.weight}

@@ -327,7 +327,7 @@ which is the screen `demo-case-verdict-review` needs.
 
 `demo-case-verdict-review` points at a *different* session id from
 `demo-case-answer`, and the deck and the app are on different origins (`:5180`
-and `:5173`), so the deck cannot reach into the iframe's history to navigate it
+and `:5174`), so the deck cannot reach into the iframe's history to navigate it
 client-side — a route change can only be done by reassigning `src`, which
 reloads the app.
 
@@ -493,7 +493,7 @@ node scripts/recapture-stills.mjs --only=map,office   # just the drifted ones
 node scripts/recapture-stills.mjs --list              # keys and routes
 ```
 
-Needs the app on `:5173`, the backend on `:5001`, and a seeded account
+Needs the app on `:5174`, the backend on `:5001`, and a seeded account
 (`npm run reset-demo`). Roughly 15s per still, most of it deliberate settling
 time for the 3D scenes; `case-answered` takes about 35s on its own, because it
 waits out a full autoplay run.
@@ -688,7 +688,7 @@ the same test after §10, and it is the one that matters now:
    wherever they read `/login` for an origin reason. That is a better failure,
    not a fixed one — the room sees photographs of the product instead of the
    product — and it exists mainly to stop a deck opened anywhere else from
-   embedding whatever answers on that machine's 5173.
+   embedding whatever answers on that machine's 5174.
 2. **Nothing has to sign in any more.** This was the second necessary condition and
    the actual cause of the false alarm: Playwright starts with an empty cookie jar,
    so every ad-hoc harness in that run was signed out. It is no longer a condition
@@ -697,7 +697,7 @@ the same test after §10, and it is the one that matters now:
    `/v1/auth/dev` itself, which only makes it faster: it skips the couple of `401`s
    and the one embed reload the deck would otherwise recover from. `--no-auth`
    leaves that to the deck.
-3. **The servers must be up and the demo staged.** App on `:5173`, backend on
+3. **The servers must be up and the demo staged.** App on `:5174`, backend on
    `:5001` with `DEV_AUTH_ENABLED=true`, and `npm run reset-demo` run first so
    `demo.config.ts` points at sessions that exist (§1). `DEV_AUTH_ENABLED` is now
    load-bearing rather than convenient — without it the deck cannot sign itself in
@@ -814,7 +814,7 @@ through the deck's own `/demo-api` proxy. Three properties make that work:
 - **Same-origin**, so no CORS: the proxy is why these calls are possible at all
   (see the long note in `vite.config.ts`).
 - **Cookies ignore the port.** The `Set-Cookie` lands on host `localhost`, so a
-  request made by the deck on `:5180` signs in the app on `:5173`. This is the
+  request made by the deck on `:5180` signs in the app on `:5174`. This is the
   same mechanism that makes the `localhost`/`127.0.0.1` distinction fatal, used
   deliberately.
 - **`/v1/auth/dev` is in `AUTH_EXEMPT_PATHS`** and returns `404` unless
@@ -890,7 +890,7 @@ embed, and the queue is abandoned the moment Start is pressed.
 ## 11. Verified on Linux, 2026-08-11
 
 Everything below was run against the full stack in a Linux VM — backend on 5001
-with `AUTO_SEED=true`, the app on 5173, the deck on 5180, opened as `localhost`
+with `AUTO_SEED=true`, the app on 5174, the deck on 5180, opened as `localhost`
 throughout. It is recorded because most of it had never been run anywhere but
 one laptop: until `scripts/playwright-env.mjs`, every harness in `scripts/`
 imported Playwright from an absolute path under `/private/tmp` and looked for a

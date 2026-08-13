@@ -1048,11 +1048,13 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     if (devQuery?.get('officeWindowView') !== '0') windowGroup.add(windowView.root)
 
     const glass = addMesh(windowGroup, new THREE.PlaneGeometry(windowWidth, windowHeight), new THREE.MeshStandardMaterial({
-      color: rustic ? 0x465f62 : 0x5d899f,
+      color: rustic ? 0x6a5e4e : windowView.daylight,
       transparent: true,
-      opacity: rustic ? .2 : .12,
-      roughness: rustic ? .34 : .2,
-      metalness: .05,
+      opacity: rustic ? .12 : .05,
+      roughness: rustic ? .28 : .08,
+      metalness: .02,
+      emissive: windowView.daylight,
+      emissiveIntensity: windowView.night ? .08 : .035,
       // The pane must not own the depth at these pixels. The contour pass finds
       // its lines in the depth buffer, so a sheet of glass writing depth across
       // the whole opening would flatten everything behind it into one plane and
@@ -1068,6 +1070,23 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     addMesh(windowGroup, new THREE.BoxGeometry(rustic ? .2 : .12, windowHeight + .28, .18), frameMaterial, [windowWidth / 2 + .1, 0, .19])
     addMesh(windowGroup, new THREE.BoxGeometry(rustic ? .13 : .08, windowHeight, .14), frameMaterial, [0, 0, .2])
     addMesh(windowGroup, new THREE.BoxGeometry(windowWidth, rustic ? .13 : .08, .14), frameMaterial, [0, rustic ? .08 : 0, .2], [0, 0, rustic ? -.018 : 0])
+    // The wall is a plane, so the opening has no thickness unless we give it
+    // one. A reveal that catches the view's own daylight is what stops the
+    // glass reading as a sticker on the plaster, and it is the contact lighting
+    // the floor in front of the window is supposed to agree with.
+    const reveal = new THREE.MeshStandardMaterial({
+      color: rustic ? 0x5a4332 : 0xd8cbb4,
+      roughness: rustic ? .92 : .62,
+      metalness: 0,
+      emissive: windowView.daylight,
+      emissiveIntensity: windowView.night ? .05 : (rustic ? .08 : .1),
+    })
+    const revealDepth = .36
+    addMesh(windowGroup, new THREE.BoxGeometry(.1, windowHeight, revealDepth), reveal, [-windowWidth / 2 + .04, 0, revealDepth / 2 - .08])
+    addMesh(windowGroup, new THREE.BoxGeometry(.1, windowHeight, revealDepth), reveal, [windowWidth / 2 - .04, 0, revealDepth / 2 - .08])
+    addMesh(windowGroup, new THREE.BoxGeometry(windowWidth, .1, revealDepth), reveal, [0, windowHeight / 2 - .04, revealDepth / 2 - .08])
+    const sill = addMesh(windowGroup, new THREE.BoxGeometry(windowWidth + .16, .14, revealDepth + .12), reveal, [0, -windowHeight / 2 + .02, revealDepth / 2])
+    sill.castShadow = false
 
     const rainCount = 90
     const rainPositions = new Float32Array(rainCount * 6)
@@ -2956,9 +2975,10 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // They keep faces and furniture readable from every camera heading while
     // leaving the desk, hearth, and sconces to provide localized warmth.
     phase('staff')
-    scene.add(new THREE.HemisphereLight(rustic ? 0x9fb6b5 : 0xc2d6d7, rustic ? 0x2c1d14 : 0x32271e, rustic ? 1.05 : 1.58))
-    scene.add(new THREE.AmbientLight(rustic ? 0x8d765e : 0x8ca3aa, rustic ? .34 : .42))
-    const keyLight = new THREE.DirectionalLight(rustic ? 0xe7bd89 : 0xffe1b2, rustic ? .46 : .72)
+    const skyAmbient = new THREE.Color(rustic ? 0x9fb6b5 : 0xc2d6d7).lerp(new THREE.Color(windowView.skyTop), rustic ? .12 : .22)
+    scene.add(new THREE.HemisphereLight(skyAmbient, rustic ? 0x2c1d14 : 0x32271e, rustic ? 1.05 : 1.52))
+    scene.add(new THREE.AmbientLight(rustic ? 0x8d765e : 0x8ca3aa, rustic ? .34 : .4))
+    const keyLight = new THREE.DirectionalLight(rustic ? 0xe7bd89 : 0xffe1b2, rustic ? .46 : .68)
     keyLight.position.set(-3.5, 7.2, 6.5)
     keyLight.castShadow = false
     scene.add(keyLight)
@@ -2982,10 +3002,24 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
     // everybody sees.
     const windowSpillBase = rustic ? .82 : 1.42
     const windowSpill = windowSpillBase * windowView.daylightStrength
-    const windowLight = new THREE.SpotLight(windowView.daylight, windowSpill, 14, .82, .82, 1.3)
-    windowLight.position.set(windowX, 3.7, -2.8)
-    windowLight.target.position.set(-1.2, 0, 2.8)
+    const windowOrigin = new THREE.Vector3(windowX, windowY, -3.94)
+    const windowLight = new THREE.SpotLight(windowView.daylight, windowSpill, 16, .7, .78, 1.15)
+    windowLight.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, 1.6)
+    windowLight.target.position.copy(windowOrigin).addScaledVector(windowView.sunDirection, -7.5)
+    windowLight.target.position.y = Math.max(.15, windowLight.target.position.y)
     scene.add(windowLight, windowLight.target)
+    // The pane as a sky source, not a lamp. A spot on the floor is the sun
+    // patch; this is the hemisphere that arrives through the glass and wraps
+    // the sill, the near floorboards, and the window-side of the desks.
+    const windowPane = new THREE.RectAreaLight(
+      windowView.daylight,
+      (rustic ? 1.6 : 2.8) * windowView.daylightStrength * (windowView.night ? .55 : 1),
+      windowWidth * .92,
+      windowHeight * .92,
+    )
+    windowPane.position.set(windowX, windowY, -3.7)
+    windowPane.lookAt(windowX * .35, 1.55, 1.6)
+    scene.add(windowPane)
 
     const dustCount = 105
     const dustPositions = new Float32Array(dustCount * 3)
@@ -3885,6 +3919,12 @@ export function OfficeThreeScene({ tier, ownedAssets, layoutKey, activeCase, flo
       const awake = office?.classList.contains('cat-awake') ?? false
       deskLight.intensity = THREE.MathUtils.damp(deskLight.intensity, focus ? (rustic ? 3.15 : 3.7) : (rustic ? 1.72 : 2.05), 5, delta)
       windowLight.intensity = THREE.MathUtils.damp(windowLight.intensity, storm ? windowSpill * 1.9 : windowSpill, 3.7, delta)
+      windowPane.intensity = THREE.MathUtils.damp(
+        windowPane.intensity,
+        (rustic ? 1.6 : 2.8) * windowView.daylightStrength * (storm ? 1.55 : windowView.night ? .55 : 1),
+        3.7,
+        delta,
+      )
       ;(screen as THREE.MeshStandardMaterial).emissiveIntensity = .52 + Math.sin(elapsed * 1.1) * .07
       if (lanternFlame) {
         lanternFlame.scale.y = .84 + Math.sin(elapsed * 8.2) * .11 + Math.sin(elapsed * 13.7) * .05

@@ -57,12 +57,12 @@
      falls in one place, immediately above the ledger's own rule, where a
      division between `who the cohort was` and `what the study measured` is
      what the composition wants anyway. */
-  justify-content: space-between;
+  justify-content: center;
   /* A minimum rather than a rhythm: the figure is a hair taller than the stage
      at 1080p, so `space-between` has no slack to distribute and this gap is
      what is actually drawn between the two groups. At `--s-3` the last four
      pixels of the video row's attribution were under the stage's clip. */
-  gap: var(--s-2);
+  gap: var(--s-6);
   /* Clearance for the fragment line, which sits in the slide's own grid row
      directly beneath and would otherwise meet the last verdict.
   

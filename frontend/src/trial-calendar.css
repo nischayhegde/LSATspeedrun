@@ -91,7 +91,7 @@
   border-radius: 8px;
   color: #f1e5c7;
   background: #142530;
-  font-family: var(--font-ui);
+  font-family: var(--font-body);
   font-size: 13px;
 }
 .trial-date-field button {

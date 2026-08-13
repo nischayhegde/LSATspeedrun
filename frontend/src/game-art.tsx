@@ -568,6 +568,7 @@ export function ExplorableOffice({
   onFirm,
   onEmpire,
   onStory,
+  demo = false,
 }: {
   game: GameState
   activeCase: ActiveOfficeCase | null
@@ -575,6 +576,7 @@ export function ExplorableOffice({
   onFirm: () => void
   onEmpire: () => void
   onStory: () => void
+  demo?: boolean
 }) {
   const { play } = useSound()
   const explorerRef = useRef<HTMLDivElement | null>(null)
@@ -620,6 +622,11 @@ export function ExplorableOffice({
                 }
               })()}
               onClick={() => {
+                if (demo && revealedZone !== zone.key) {
+                  setRevealedZone(zone.key)
+                  void play('select', { seed: `demo:${zone.key}`, intensity: .36 })
+                  return
+                }
                 if (window.matchMedia('(hover: none)').matches && revealedZone !== zone.key) {
                   setRevealedZone(zone.key)
                   return
@@ -645,6 +652,6 @@ export function ExplorableOffice({
 
 /* ------------------------------------------------------- empire map */
 
-export function EmpireWorldMap({ game, focusRival, onManage, empireValueLabel }: { game: GameState; focusRival?: string | null; onManage: (tab: 'upgrades' | 'rivals') => void; empireValueLabel: string }) {
-  return <UnifiedEmpireMap game={game} focusRival={focusRival} onManage={onManage} empireValueLabel={empireValueLabel} />
+export function EmpireWorldMap({ game, focusRival, onManage, empireValueLabel, demo, finalDemo }: { game: GameState; focusRival?: string | null; onManage: (tab: 'upgrades' | 'rivals') => void; empireValueLabel: string; demo?: boolean; finalDemo?: boolean }) {
+  return <UnifiedEmpireMap game={game} focusRival={focusRival} onManage={onManage} empireValueLabel={empireValueLabel} demo={demo} finalDemo={finalDemo} />
 }

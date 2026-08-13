@@ -219,27 +219,29 @@ function hash(seed: number) {
 }
 
 /**
- * Sun high, to the right and behind the viewer, so the fronts facing the window
- * read as mid-tone and every mass shows a lit flank against a shaded one. The
- * shadow floor is skylight only; a face turned away from the sun outdoors is
- * lit by half the sky and is nowhere near black.
- */
-const SUN = new THREE.Vector3(.55, .74, .38).normalize()
-/**
- * The sun is high and only slightly toward the viewer, so the faces turned at
- * the window take about a third of it and the roofs take nearly all of it. That
- * is correct for the light and it means the window-facing faces — the ones the
- * whole view is made of — sit at `SKYLIGHT + SUNLIGHT * .38`. With a skylight
- * floor of .3 that was .54, and after the pipeline's own 0.45x it put every
- * facade in the frame at half the value it was authored at.
+ * Sun high-right, just outside the frame, shining in from the district.
  *
- * The floor is high because it is honest: a wall facing away from the sun
- * outdoors is lit by half the sky and is nowhere near black, and the ratio
- * between a lit flank and a shaded one outdoors is nothing like the ratio inside
- * a room lit by two lamps.
+ * The older vector sat behind the viewer so every window-facing wall took a
+ * third of the sun and the sky through the glass was the anti-solar hemisphere
+ * — a flat, even wash with no source. Putting the sun in front of the glass
+ * (negative Z) puts a glow in the upper-right of the opening, backlights the
+ * fronts, and leaves the right flanks as the bright warm plane. The room's own
+ * yaw already shows those flanks; skylight, not a fake frontal sun, keeps the
+ * fronts readable.
  */
-const SKYLIGHT = .5
-const SUNLIGHT = .62
+const SUN = new THREE.Vector3(.55, .42, -.72).normalize()
+/**
+ * Skylight is the floor a shaded outdoor wall actually sits on. It used to be
+ * .5 under a sun that also hit the fronts; the fronts now take none of the sun,
+ * so the floor is a little higher and cool, and the sun's own contribution is
+ * a warm add on the flanks and roofs rather than a scalar on every albedo.
+ */
+const SKYLIGHT = .56
+const SUNLIGHT = .68
+/** Cool skylight multiplier, as sRGB hex. Applied in `Sheet.lit`. */
+const SKY_LIGHT = 0xb7cce0
+const GABLE_FRONT = new THREE.Vector3(0, .62, .78).normalize()
+const GABLE_BACK = new THREE.Vector3(0, .62, -.78).normalize()
 
 const FORWARD = new THREE.Vector3(0, 0, 1)
 const BACKWARD = new THREE.Vector3(0, 0, -1)
@@ -280,9 +282,27 @@ class Sheet {
   private readonly position: number[] = []
   private readonly colour: number[] = []
   private readonly haze = new THREE.Color()
+  private readonly look: RegionLook
 
   constructor(look: RegionLook, private readonly hazeStart: number, private readonly hazeEnd: number, private readonly hazeDepth = look.hazeDepth) {
+    this.look = look
     this.haze.setHex(look.haze)
+  }
+
+  /**
+   * Albedo under a cool sky and a warm sun. A scalar brightness was flattening
+   * every mass to a tinted brick; the split is what makes a flank read as lit
+   * rather than as a paler copy of the front.
+   */
+  private lit(base: number, normal: THREE.Vector3, brightness = 1) {
+    const lambert = Math.max(0, normal.dot(SUN))
+    const albedo = new THREE.Color().setHex(base)
+    if (this.look.night) {
+      return albedo.multiplyScalar((.46 + lambert * .22) * brightness)
+    }
+    const sky = new THREE.Color().setHex(SKY_LIGHT).multiplyScalar(SKYLIGHT * brightness)
+    const sun = new THREE.Color().setHex(this.look.daylight).multiplyScalar(SUNLIGHT * lambert * brightness)
+    return albedo.multiply(sky.add(sun))
   }
 
   get triangles() {
@@ -333,16 +353,16 @@ class Sheet {
    * A rectangular mass, five faces. The underside is never visible from a
    * window and is the one face worth not paying for.
    */
-  box(x: number, y: number, z: number, width: number, height: number, depth: number, base: number, brightness = 1) {
+  box(x: number, y: number, z: number, width: number, height: number, depth: number, base: number, brightness = 1, openings = 0) {
     const hw = width / 2
     const hd = depth / 2
     const top = y + height
-    const shade = (normal: THREE.Vector3) => tone(base, (SKYLIGHT + SUNLIGHT * Math.max(0, normal.dot(SUN))) * brightness)
-    this.quad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, top, z + hd], [x - hw, top, z + hd], shade(FORWARD))
-    this.quad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, top, z - hd], [x + hw, top, z - hd], shade(BACKWARD))
-    this.quad([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, top, z - hd], [x + hw, top, z + hd], shade(RIGHT))
-    this.quad([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, top, z + hd], [x - hw, top, z - hd], shade(LEFT))
-    this.quad([x - hw, top, z + hd], [x + hw, top, z + hd], [x + hw, top, z - hd], [x - hw, top, z - hd], shade(UP))
+    this.quad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, top, z + hd], [x - hw, top, z + hd], this.lit(base, FORWARD, brightness))
+    this.quad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, top, z - hd], [x + hw, top, z - hd], this.lit(base, BACKWARD, brightness))
+    this.quad([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, top, z - hd], [x + hw, top, z + hd], this.lit(base, RIGHT, brightness))
+    this.quad([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, top, z + hd], [x - hw, top, z - hd], this.lit(base, LEFT, brightness))
+    this.quad([x - hw, top, z + hd], [x + hw, top, z + hd], [x + hw, top, z - hd], [x - hw, top, z - hd], this.lit(base, UP, brightness))
+    if (openings && width > 2.2 && height > 3.2) this.glaze(x, y, z + hd + .03, width, height, openings)
   }
 
   /** A pitched roof over a mass, ridge running along x. */
@@ -350,22 +370,19 @@ class Sheet {
     const hw = width / 2
     const hd = depth / 2
     const ridge = y + rise
-    this.quad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, ridge, z], [x - hw, ridge, z], tone(base, SKYLIGHT + SUNLIGHT * .74))
-    this.quad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, ridge, z], [x + hw, ridge, z], tone(base, SKYLIGHT + SUNLIGHT * .3))
-    const end = tone(base, SKYLIGHT + SUNLIGHT * .5)
-    this.triangle([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, ridge, z], end)
-    this.triangle([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, ridge, z], end)
+    this.quad([x - hw, y, z + hd], [x + hw, y, z + hd], [x + hw, ridge, z], [x - hw, ridge, z], this.lit(base, GABLE_FRONT))
+    this.quad([x + hw, y, z - hd], [x - hw, y, z - hd], [x - hw, ridge, z], [x + hw, ridge, z], this.lit(base, GABLE_BACK))
+    this.triangle([x + hw, y, z + hd], [x + hw, y, z - hd], [x + hw, ridge, z], this.lit(base, RIGHT))
+    this.triangle([x - hw, y, z - hd], [x - hw, y, z + hd], [x - hw, ridge, z], this.lit(base, LEFT))
   }
 
   /** A pyramidal cap, for spires, campaniles and obelisks. */
   spire(x: number, y: number, z: number, width: number, rise: number, base: number) {
     const hw = width / 2
-    const lit = tone(base, SKYLIGHT + SUNLIGHT * .8)
-    const shaded = tone(base, SKYLIGHT + SUNLIGHT * .26)
-    this.triangle([x - hw, y, z + hw], [x + hw, y, z + hw], [x, y + rise, z], lit)
-    this.triangle([x + hw, y, z - hw], [x - hw, y, z - hw], [x, y + rise, z], shaded)
-    this.triangle([x + hw, y, z + hw], [x + hw, y, z - hw], [x, y + rise, z], lit)
-    this.triangle([x - hw, y, z - hw], [x - hw, y, z + hw], [x, y + rise, z], shaded)
+    this.triangle([x - hw, y, z + hw], [x + hw, y, z + hw], [x, y + rise, z], this.lit(base, GABLE_FRONT, 1.04))
+    this.triangle([x + hw, y, z - hw], [x - hw, y, z - hw], [x, y + rise, z], this.lit(base, GABLE_BACK))
+    this.triangle([x + hw, y, z + hw], [x + hw, y, z - hw], [x, y + rise, z], this.lit(base, RIGHT, 1.04))
+    this.triangle([x - hw, y, z - hw], [x - hw, y, z + hw], [x, y + rise, z], this.lit(base, LEFT))
   }
 
   /**
@@ -397,8 +414,7 @@ class Sheet {
         const tilt = (band + .5) / bands
         const normalY = Math.sin(tilt * Math.PI / 2)
         const normalR = Math.cos(tilt * Math.PI / 2)
-        const lambert = Math.max(0, (Math.cos(centre) * SUN.x + Math.sin(centre) * SUN.z) * normalR + SUN.y * normalY)
-        const colour = tone(base, SKYLIGHT + SUNLIGHT * lambert)
+        const colour = this.lit(base, new THREE.Vector3(Math.cos(centre) * normalR, normalY, Math.sin(centre) * normalR))
         if (band === bands - 1) {
           this.triangle(
             [x + Math.cos(from) * lower.r, lower.y, z + Math.sin(from) * lower.r],
@@ -423,6 +439,53 @@ class Sheet {
   plate(x: number, y: number, z: number, width: number, height: number, colour: THREE.Color) {
     const hw = width / 2
     this.quad([x - hw, y, z], [x + hw, y, z], [x + hw, y + height, z], [x - hw, y + height, z], colour)
+  }
+
+  /** A coplanar disc, for the sun and its glow. Same-plane so the contour pass draws no ring. */
+  disc(x: number, y: number, z: number, radius: number, colour: THREE.Color, gores = 8) {
+    for (let index = 0; index < gores; index += 1) {
+      const from = (index / gores) * Math.PI * 2
+      const to = ((index + 1) / gores) * Math.PI * 2
+      this.triangle(
+        [x, y, z],
+        [x + Math.cos(from) * radius, y + Math.sin(from) * radius, z],
+        [x + Math.cos(to) * radius, y + Math.sin(to) * radius, z],
+        colour,
+      )
+    }
+  }
+
+  /**
+   * Window grid on a facade facing the glass. Dark openings are what make a
+   * masonry wall read as a building rather than a crate, and at this range a
+   * plate per opening is cheaper than a bump map the contour pass cannot see.
+   */
+  glaze(x: number, y: number, zFront: number, width: number, height: number, seed: number) {
+    const storeys = Math.min(4, Math.max(1, Math.floor(height / 2.7)))
+    const bays = Math.min(5, Math.max(2, Math.floor(width / 1.9)))
+    const marginX = width * .14
+    const marginY = height * .16
+    const cellW = (width - marginX * 2) / bays
+    const cellH = (height - marginY * 2) / storeys
+    const gw = Math.min(.72, cellW * .42)
+    const gh = Math.min(1.35, cellH * .52)
+    for (let storey = 0; storey < storeys; storey += 1) {
+      for (let bay = 0; bay < bays; bay += 1) {
+        const occupied = hash(seed * 13 + storey * 7 + bay)
+        if (occupied < .12) continue
+        const lit = this.look.night ? occupied > .38 : occupied > .84
+        const glass = lit
+          ? (this.look.night ? 0xc8e8ea : 0xa39468)
+          : (this.look.night ? 0x152028 : 0x1a2229)
+        this.plate(
+          x - width / 2 + marginX + (bay + .5) * cellW,
+          y + marginY + storey * cellH + cellH * .18,
+          zFront,
+          gw, gh,
+          tone(glass, this.look.night && lit ? 1.4 : 1),
+        )
+      }
+    }
   }
 
   /** A horizontal panel of ground, water, paving or roof. */
@@ -455,6 +518,14 @@ export type OfficeWindowView = {
   /** Colour the room's window spill should take, so inside agrees with out. */
   daylight: number
   daylightStrength: number
+  /**
+   * Unit vector toward the sun, in the room's space. The view group is yawed
+   * onto the sightline and the window group itself is unrotated, so rotating
+   * the authored sun by that yaw is the direction the room's lights should use.
+   */
+  sunDirection: THREE.Vector3
+  night: boolean
+  skyTop: number
   update: (elapsed: number) => void
   triangles: number
   meshes: number
@@ -656,6 +727,9 @@ export function buildOfficeWindowView({ tier, openingWidth, openingHeight, stand
     region,
     daylight: look.daylight,
     daylightStrength: look.daylightStrength,
+    sunDirection: SUN.clone().applyAxisAngle(UP, root.rotation.y),
+    night: look.night,
+    skyTop: look.skyTop,
     update,
     triangles,
     meshes: root.children.length,
@@ -705,24 +779,43 @@ function addMover(
  * disappear into the horizon instead of ending on a visible lip.
  */
 function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight: number) {
-  const bands = 6
+  const bands = 8
+  const columns = 5
   // Reaching well below the horizon costs two triangles and covers the sliver
   // of sky under the ground plane's far edge that a high floor can see past.
   const bottom = -halfHeight * 1.2
   const top = halfHeight * 1.2
+  const sunX = SUN.z < 0 ? (SUN.x / -SUN.z) * SKY_DEPTH : halfWidth * .72
+  const sunY = SUN.z < 0 ? (SUN.y / -SUN.z) * SKY_DEPTH : halfHeight * .5
   for (let index = 0; index < bands; index += 1) {
     const y0 = bottom + (top - bottom) * (index / bands)
     const y1 = bottom + (top - bottom) * ((index + 1) / bands)
     // Only the top half of the quad is sky proper; the part below the horizon
     // is there to be hidden, so the whole lower half stays at the haze value.
     const height = Math.max(0, (y0 + y1) / 2 / top)
-    sheet.quad(
-      [-halfWidth, y0, -SKY_DEPTH], [halfWidth, y0, -SKY_DEPTH],
-      [halfWidth, y1, -SKY_DEPTH], [-halfWidth, y1, -SKY_DEPTH],
-      tone(mixHex(look.haze, look.skyTop, Math.pow(height, .55)), 1),
-    )
+    const zenith = Math.pow(height, .55)
+    for (let column = 0; column < columns; column += 1) {
+      const u0 = column / columns
+      const u1 = (column + 1) / columns
+      const x0 = -halfWidth + halfWidth * 2 * u0
+      const x1 = -halfWidth + halfWidth * 2 * u1
+      const xMid = (x0 + x1) / 2
+      // Warmth toward the sun's azimuth, stronger near the horizon. This is
+      // the aerial-perspective equivalent of a sun just out of frame: the
+      // right-hand sky goes gold while the zenith stays the region's blue.
+      const towardSun = 1 - Math.min(1, Math.abs(xMid - sunX) / (halfWidth * 1.45))
+      const warmth = towardSun * (1 - zenith) * (look.night ? .12 : .48)
+      const base = mixHex(look.haze, look.skyTop, zenith)
+      const graded = mixHex(base, look.night ? look.accent : look.daylight, warmth * .5)
+      const boost = 1 + towardSun * (look.night ? .06 : .18) * (1 - zenith * .35)
+      sheet.quad(
+        [x0, y0, -SKY_DEPTH], [x1, y0, -SKY_DEPTH],
+        [x1, y1, -SKY_DEPTH], [x0, y1, -SKY_DEPTH],
+        tone(graded, boost),
+      )
+    }
   }
-  // Everything in the sky is drawn five centimetres in front of the bands and
+  // Everything in the sky is drawn a few centimetres in front of the bands and
   // nothing is drawn in front of that. The contour pass thresholds on depth
   // difference relative to distance, so at seventy-eight metres a five
   // centimetre step is three orders of magnitude below the edge threshold and
@@ -731,8 +824,13 @@ function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight:
   // shape with no ink around it, and the way to get that from a contour pass is
   // to give it nothing to contour.
   const plane = -SKY_DEPTH + .05
+  const sunPlane = -SKY_DEPTH + .04
 
   if (look.night) {
+    const moonX = halfWidth * .28
+    const moonY = halfHeight * .38
+    sheet.disc(moonX, moonY, sunPlane, 6.4, tone(mixHex(look.haze, look.accent, .35), .7))
+    sheet.disc(moonX, moonY, sunPlane, 2.6, tone(0xdde6f2, .92))
     for (let index = 0; index < 30; index += 1) {
       const size = .3 + hash(index * 5.3) * .5
       sheet.plate(
@@ -745,17 +843,25 @@ function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight:
     return
   }
 
+  if (SUN.z < 0) {
+    const sx = Math.max(-halfWidth * .92, Math.min(halfWidth * .92, sunX))
+    const sy = Math.max(halfHeight * .04, Math.min(halfHeight * .82, sunY))
+    sheet.disc(sx, sy, sunPlane, 16, tone(mixHex(look.haze, look.daylight, .5), .9), 10)
+    sheet.disc(sx, sy, sunPlane, 8.5, tone(mixHex(look.daylight, 0xffe7b0, .55), 1), 10)
+    sheet.disc(sx, sy, sunPlane, 3.4, tone(0xfff4d8, 1.1), 10)
+  }
+
   // Kept low in the quad on purpose. The sky plane reaches far above what the
   // opening admits — it has to, so its own edge is never found — and clouds
   // scattered over the whole of it are clouds nobody sees. The band that is
   // actually in frame is the first fifth or so above the horizon.
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 7; index += 1) {
     cloud(
       sheet,
       (hash(index * 2.7) - .5) * halfWidth * 1.5,
-      halfHeight * (.06 + hash(index * 4.1) * .34),
+      halfHeight * (.05 + hash(index * 4.1) * .32),
       plane,
-      halfWidth * (.16 + hash(index * 6.3) * .2),
+      halfWidth * (.14 + hash(index * 6.3) * .2),
       look,
       index,
     )
@@ -772,8 +878,9 @@ function buildSky(sheet: Sheet, look: RegionLook, halfWidth: number, halfHeight:
  * say the whole shelf is sitting at one altitude.
  */
 function cloud(sheet: Sheet, x: number, y: number, z: number, width: number, look: RegionLook, seed: number) {
-  const base = tone(mixHex(look.haze, 0xe9e2d2, .5), 1)
-  const crown = tone(0xfaf3e2, .96)
+  const sunSide = 1 - Math.min(1, Math.abs(x - (SUN.z < 0 ? (SUN.x / -SUN.z) * SKY_DEPTH : 0)) / Math.max(12, width * 4))
+  const base = tone(mixHex(look.haze, mixHex(0xe9e2d2, look.daylight, sunSide * .25), .5), 1)
+  const crown = tone(mixHex(0xfaf3e2, 0xfff4d8, sunSide * .45), .96 + sunSide * .06)
   const lobes = 3 + Math.floor(hash(seed * 9.7) * 3)
   const step = width / lobes
   const floorY = y
@@ -936,7 +1043,7 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
       tone(mixHex(look.stone, brick[index % brick.length], .42), .98),
     )
   }
-  far.box(-farHalf * .34, grade, -47, 12, 14, 9, look.stone, .98)
+  far.box(-farHalf * .34, grade, -47, 12, 14, 9, look.stone, .98, 21)
   far.dome(-farHalf * .34, grade + 14, -47, 5.6, 5, mixHex(look.roof, 0x8d9296, .55))
   for (const spire of [farHalf * .24, farHalf * .6]) {
     const height = 18 + hash(spire) * 7
@@ -960,7 +1067,7 @@ function buildOldQuarter(far: Sheet, mid: Sheet, close: Sheet, { look, tier, gra
     const height = 6 + hash(index * 8.3) * 7
     const width = midHalf * 2 / midBlocks * (.86 + hash(index * 2.9) * .34)
     const depth = 6 + hash(index) * 4
-    mid.box(x, grade, z, width, height, depth, brick[index % brick.length])
+    mid.box(x, grade, z, width, height, depth, brick[index % brick.length], 1, index + 3)
     mid.gable(x, grade + height, z, width * 1.06, depth, 1.5 + hash(index * 9.1) * .9, look.roof)
     // Stacks. The one silhouette detail that makes a brick roofline read as a
     // brick roofline rather than a row of wedges.
@@ -1182,13 +1289,13 @@ function buildCircuit(far: Sheet, mid: Sheet, close: Sheet, { look, grade, overS
     const along = 26 + index * 6.2
     const x = (index % 2 ? 1 : -1) * (roadHalf + 3.4 + hash(index * 5.9) * 2.5) + drift(along / 46)
     const height = 3.4 + hash(index * 3.1) * 1.8
-    mid.box(x, grade, -along, 4, height, 3.6, wall[index % wall.length])
+    mid.box(x, grade, -along, 4, height, 3.6, wall[index % wall.length], 1, index + 9)
     // Thatch on the timber cottages, clay pantile on the rendered ones: the
     // pale, broken roofline is most of what makes a country street read light.
     mid.gable(x, grade + height, -along, 4.3, 3.6, 1.7 + hash(index * 8.7) * .5, hash(index * 6.3) > .5 ? 0xb49c63 : 0x8d5638)
     mid.box(x + 1.2, grade + height + 1.7, -along, .42, 1.2, .42, 0x74604c)
   }
-  mid.box(-midHalf * .58, grade, -37, 8, 4.8, 5.4, 0x9c9268)
+  mid.box(-midHalf * .58, grade, -37, 8, 4.8, 5.4, 0x9c9268, 1, 14)
   mid.gable(-midHalf * .58, grade + 4.8, -37, 8.3, 5.4, 2.3, 0xb49c63)
   mid.box(-midHalf * .58 + 6.5, grade, -39, 4.4, 3.2, 4.4, 0x877c60)
   mid.gable(-midHalf * .58 + 6.5, grade + 3.2, -39, 4.7, 4.4, 1.5, 0x8d5638)
@@ -1240,7 +1347,7 @@ function buildTreatySea(far: Sheet, mid: Sheet, close: Sheet, { look, tier, grad
     const x = moleCentre - moleLength * .41 + (index + .5) * (moleLength * .82 / sheds)
     const z = -23 - hash(index) * 8
     const height = 4.2 + hash(index * 3.3) * 3
-    mid.box(x, sea + 1.7, z, 6, height, 6, mixHex(look.stone, 0x8a7c66, .5))
+    mid.box(x, sea + 1.7, z, 6, height, 6, mixHex(look.stone, 0x8a7c66, .5), 1, index + 12)
     mid.gable(x, sea + 1.7 + height, z, 6.3, 6, 1.2, look.roof)
   }
   const cranes = spanCount(moleLength * .7, 11, 3)
@@ -1257,7 +1364,7 @@ function buildTreatySea(far: Sheet, mid: Sheet, close: Sheet, { look, tier, grad
   // of the composition has to be as long as that side is.
   const embassyWidth = Math.max(14, midHalf * .62)
   mid.box(embassyX, sea, -24, embassyWidth + 1, 1.5, 10, mixHex(look.stone, 0xb0a894, .4))
-  mid.box(embassyX, sea + 1.5, -25.5, embassyWidth, embassyHeight, 7, mixHex(look.stone, 0xbdb5a0, .45))
+  mid.box(embassyX, sea + 1.5, -25.5, embassyWidth, embassyHeight, 7, mixHex(look.stone, 0xbdb5a0, .45), 1, 17)
   const columns = spanCount(embassyWidth * .8, 1.7, 6)
   for (let index = 0; index < columns; index += 1) {
     mid.box(embassyX - embassyWidth * .4 + (index + .5) * (embassyWidth * .8 / columns), sea + 1.5, -21.8, .58, embassyHeight - .4, .58, mixHex(look.stone, 0xcdc4ab, .5))
@@ -1347,7 +1454,7 @@ function buildSovereignArc(far: Sheet, mid: Sheet, close: Sheet, { look, tier, g
     const offset = 10.5 + index * 1.5
     const height = 8.5 - index * .3
     for (const side of [-1, 1]) {
-      mid.box(side * offset, grade, z, 9, height, 7, index % 2 ? ashlar : mixHex(ashlar, shadowed, .32))
+      mid.box(side * offset, grade, z, 9, height, 7, index % 2 ? ashlar : mixHex(ashlar, shadowed, .32), 1, index * 2 + (side < 0 ? 1 : 4))
       mid.box(side * offset, grade + height, z, 9.7, 1, 7.6, shadowed)
       mid.box(side * offset, grade + height + 1, z, 8, 1.9, 6, mixHex(look.roof, 0x7d848a, .45))
       for (let column = 0; column < 4; column += 1) {

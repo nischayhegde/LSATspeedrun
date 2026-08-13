@@ -30,7 +30,9 @@
  */
 import { createServer } from 'node:http'
 
-const PORT = Number(process.argv[2] || 5173)
+import { APP_PORT } from '../app-origin.mjs'
+
+const PORT = Number(process.argv[2] || APP_PORT)
 
 const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>stub app origin</title>

@@ -1,8 +1,8 @@
 # Lawyer Tycoon — the deck
 
-A 24-slide pitch deck that frames the real product, live, on six of its slides —
+A 25-slide pitch deck that frames the real product, live, on six of its slides —
 a seventh demo slide is a deliberate still rather than an embed.
-4:50 of talk, 1:22 of it inside a running app.
+5:00 of talk, 1:22 of it inside a running app.
 
 This file is the runbook. Read **Start-up** before presentation day and
 **Troubleshooting** on it.
@@ -22,8 +22,8 @@ never from `file://`.**
 The app's session cookies (`lsat_session`, `lsat_csrf`) are `SameSite=Lax`, so
 they only ride along with a framed request when the framing document and the
 frame are the *same site* — and site is compared by host, not by port.
-`localhost:5180` framing `localhost:5173` is same-site and stays signed in.
-`127.0.0.1:5180` framing `localhost:5173` is cross-site and the cookie is
+`localhost:5180` framing `localhost:5174` is same-site and stays signed in.
+`127.0.0.1:5180` framing `localhost:5174` is cross-site and the cookie is
 withheld. A `file://` page fails the same way.
 
 The deck's dev server binds the name `localhost`, so `127.0.0.1:5180` will refuse
@@ -36,7 +36,7 @@ pins every demo to its still before the first frame is painted — see
 `liveDemoIsPossibleHere` there. That is the same comparison the start card's
 Origin check makes, applied instead of only reported, and it is what stops a
 copy of this deck opened on any other machine from framing whatever happens to
-be answering on that machine's port 5173. **You still want the rule**: stills are
+be answering on that machine's port 5174. **You still want the rule**: stills are
 the fallback, not the demo.
 
 If you have a setup where the two hosts genuinely are the same site under a name
@@ -79,7 +79,7 @@ every embed in the deck is empty. After `flask db upgrade`, the next `run.py`
 seeds all 6,886 questions itself and `/v1/health` comes back `ok`. It takes about
 two minutes, once, and only on a database built from nothing.
 
-### 2 — Frontend dev server, port 5173
+### 2 — Frontend dev server, port 5174
 
 ```bash
 cd frontend
@@ -109,13 +109,14 @@ go red. Preview is for checking that the deck *builds*, not for rehearsing.
 
 ### The one-minute pre-flight
 
-The start card's five dots cover the three processes and the session. This covers
-the thing they cannot see — whether the six ids in `demo.config.ts` still describe
-the database underneath. Run it before a rehearsal and again before the talk.
+The audience-facing start card stays clean. Add `?hud` during rehearsal to expose
+the process/session diagnostics; the checks themselves run on every load. They
+cover the thing the room cannot see — whether the six ids in `demo.config.ts`
+still describe the database underneath.
 
 ```bash
 curl -s -o /dev/null -w "backend  5001 %{http_code}\n" http://127.0.0.1:5001/v1/health
-curl -s -o /dev/null -w "frontend 5173 %{http_code}\n" http://localhost:5173/
+curl -s -o /dev/null -w "frontend 5174 %{http_code}\n" http://localhost:5174/
 curl -s -o /dev/null -w "deck     5180 %{http_code}\n" http://localhost:5180/
 .venv/bin/python backend/scripts/repin_demo_session.py
 ```
@@ -123,6 +124,17 @@ curl -s -o /dev/null -w "deck     5180 %{http_code}\n" http://localhost:5180/
 Three `200`s and `OK — all six pinned values match this backend.` Anything else
 names itself; the recovery for a stale pin is always `cd deck && npm run reset-demo`
 and never a hand-edit. Run it from the repository root.
+
+With all three processes running, execute the integrated gate:
+
+```bash
+cd deck
+npm run verify
+```
+
+It checks the 25-slide/5:00 registry, cold sign-in, iframe continuity and sizing,
+full-bleed proportions, still-only behavior, the office transformation toggle,
+and clipping. Do not present from a build that fails this command.
 
 ### Why there is no sign-in step
 
@@ -138,7 +150,7 @@ borrowed laptop — by showing an audience a login screen. The two fixes:
 - **The session.** `StartGate` runs the preflight on mount, and the preflight calls
   `POST /v1/auth/dev` — the same endpoint that login button calls — through the
   deck's own `/demo-api` proxy, so the cookie lands on host `localhost` and is sent
-  to the app on 5173. It only fires when `/v1/me` has already answered 401, so a
+  to the app on 5174. It only fires when `/v1/me` has already answered 401, so a
   reload is a no-op rather than a second login.
 - **The guided tour.** `stage_demo.py` marks the demo account as already oriented
   server-side (`guided_tour_completed_at`), which holds for every browser at once
@@ -211,7 +223,7 @@ re-seed invalidates all six at once:
 
 ```ts
 export const demoConfig: DemoConfig = {
-  appOrigin: APP_ORIGIN,                  // 'http://localhost:5173'
+  appOrigin: APP_ORIGIN,                  // 'http://localhost:5174'
   displayOrigin: 'Lawyer Tycoon',          // what the room reads in the frame's title bar
   liveSessionId: '56e1702b-bf3c-4b79-8547-096db203f564',
   verdictSessionId: '4a6daa51-92bf-4b9c-aea9-9b580f389aa3',
@@ -276,7 +288,7 @@ to match the one the data is seeded under.
 | `→` `↓` `space` `PageDown` `enter` | Next slide |
 | `←` `↑` `PageUp` `backspace` | Previous slide |
 | `Home` / `End` | First / last slide |
-| `G` | Grid overview of all 24 slides — click one to jump |
+| `G` | Grid overview of all 25 slides — click one to jump |
 | `P` | Presenter notes: this slide's notes, what's next, the clock, ahead/behind |
 | `Q` | Q&A panel: ammunition, evidence warnings, the cut list — searchable |
 | `A` | Reveal the next demo callout |
@@ -344,7 +356,7 @@ and hides the cause. Two things produce this, and the start card names both:
 Reloading the deck is always safe: it re-runs the preflight, which re-establishes
 the session if it is missing and reloads any embed that had loaded without it.
 
-**A demo frame says "app not running".** The frontend dev server on 5173 is down,
+**A demo frame says "app not running".** The frontend dev server on 5174 is down,
 or the backend on 5001 is. Press `S` and carry on with stills; the deck is
 designed to be presentable that way. Fix it between acts, not on stage.
 
@@ -455,7 +467,7 @@ data.
 
 ## Timing table
 
-4:50 total. 1:22 of it live in the app, across the six bolded slides.
+5:00 total. 1:22 of it live in the app, across the six bolded slides.
 
 | # | Slide id | Speaker | Seconds | Cumulative |
 | --- | --- | --- | ---: | ---: |
@@ -465,26 +477,27 @@ data.
 | 4 | `turn-nothing-to-teach` | Nischay | 12 | 0:42 |
 | 5 | `thesis-speedrun` | Nischay | 10 | 0:52 |
 | 6 | `pov-reasoning-is-the-work` | Nischay | 14 | 1:06 |
-| 7 | `pov-confidence-signal` | Nischay | 11 | 1:17 |
-| 8 | `pov-volume-is-the-constraint` | Nischay | 21 | 1:38 |
-| 9 | `concept-lawyer-tycoon` | Nischay | 14 | 1:52 |
-| 10 | `pov-ai-never-answers` | Alan | 13 | 2:05 |
-| 11 | `pov-strategy-inside-the-question` | Alan | 11 | 2:16 |
-| 12 | `pov-real-clock` | Alan | 10 | 2:26 |
-| 13 | `demo-case-answer` | Alan | **30** | 2:56 |
-| 14 | `demo-case-verdict-review` | Alan | **13** | 3:09 |
-| 15 | `demo-mega-litigation` | Alan | **14** | 3:23 |
-| 16 | `dashboard-everything` | Alan | 8 | 3:31 |
-| 17 | `pov-virtual-currency` | Alan | 13 | 3:44 |
-| 18 | `game-by-design` | Alan | 8 | 3:52 |
-| 19 | `demo-clients-walk-in` | Alan | **9** | 4:01 |
-| 20 | `demo-office-transformation` | Alan | **9** | 4:10 |
-| 21 | `demo-map-and-firm` | Alan | **8** | 4:18 |
-| 22 | `demo-focus-mode` | Alan | *8* | 4:26 |
-| 23 | `game-never-gates` | Alan | 11 | 4:37 |
-| 24 | `close-one-stop-shop` | Nischay | 13 | 4:50 |
+| 7 | `market-in-their-own-words` | Nischay | 10 | 1:16 |
+| 8 | `pov-confidence-signal` | Nischay | 11 | 1:27 |
+| 9 | `pov-volume-is-the-constraint` | Nischay | 21 | 1:48 |
+| 10 | `concept-lawyer-tycoon` | Nischay | 14 | 2:02 |
+| 11 | `pov-ai-never-answers` | Alan | 13 | 2:15 |
+| 12 | `pov-strategy-inside-the-question` | Alan | 11 | 2:26 |
+| 13 | `pov-real-clock` | Alan | 10 | 2:36 |
+| 14 | `demo-case-answer` | Alan | **30** | 3:06 |
+| 15 | `demo-case-verdict-review` | Alan | **13** | 3:19 |
+| 16 | `demo-mega-litigation` | Alan | **14** | 3:33 |
+| 17 | `dashboard-everything` | Alan | 8 | 3:41 |
+| 18 | `pov-virtual-currency` | Alan | 13 | 3:54 |
+| 19 | `game-by-design` | Alan | 8 | 4:02 |
+| 20 | `demo-clients-walk-in` | Alan | **9** | 4:11 |
+| 21 | `demo-office-transformation` | Alan | **9** | 4:20 |
+| 22 | `demo-map-and-firm` | Alan | **8** | 4:28 |
+| 23 | `demo-focus-mode` | Alan | *8* | 4:36 |
+| 24 | `game-never-gates` | Alan | 11 | 4:47 |
+| 25 | `close-one-stop-shop` | Nischay | 13 | 5:00 |
 
-Slide 22's figure is *italicised* rather than bolded because it is not a live
+Slide 23's figure is *italicised* rather than bolded because it is not a live
 embed: `demo-focus-mode` carries `stillOnly`, and its eight seconds are speech
 over a frozen frame. The six bolded slides are the live ones.
 
@@ -506,8 +519,8 @@ than by index because the deck gets renumbered often enough that a written
 ## Cut list
 
 **There is no cut list any more, and that is deliberate** — see §C of
-[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 4:50 against a 4–5 minute cap
-there are 10 seconds of headroom, which is still under two stumbles, and every slide
+[`NARRATIVE.md`](./NARRATIVE.md), which governs. At 5:00 the current cut uses the
+entire target, so every slide
 is now short enough that there is nothing to trim inside one: it is either said
 or it is not. The order below is what to do if a cut is forced anyway. Each entry
 saves exactly that slide's current budget, no single one buys much, and all six

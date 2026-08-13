@@ -261,12 +261,11 @@
     transparent 86%,
     rgba(4, 7, 12, .34) 92%,
     rgba(4, 7, 12, .74) 100%);
-  /* The presenter has to be able to click the app, which is the entire argument
-     for an iframe over a video, and a full-screen layer above it swallows every
-     pointer event. Nothing in a demo slide's layer is interactive — it is an
-     eyebrow, a headline and a route caption — so the layer becomes glass.
-     `deck.tsx` already sets this inline on whichever layer is not live. */
   pointer-events: none;
+}
+
+.deck[data-demo-chrome='off'] .deck-layers .deck-layer[data-kind='demo'] {
+  --scrim: none;
 }
 
 .body.body-demo {
@@ -354,64 +353,131 @@
    projector, where `contain` is still the right answer because the alternative is
    cropping the product — so that the band is the app's own dark paper rather than
    whatever is behind the layer. */
-.body.body-demo .demo-still { background: #070d15; }
+.body.body-demo .demo-still {
+  background: #070d15;
+  object-fit: cover;
+  object-position: center 42%;
+}
 
-/* --- the copy: a caption plate, not a rail --------------------------
-   Everything about how the plate *looks* comes from `.caption-plate` in the base
-   stylesheet — border, padding, engraved fill, shadow — because it is the same
-   object over the same kind of art, and the one thing a plate over a live app
-   must not be is a second plate that nearly matches the first. What is set here
-   is only where it sits and how wide it may get. */
+.demo-office-wipe {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #070d15;
+}
+
+.demo-office-wipe .demo-office-after {
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 640ms var(--ease-out);
+}
+
+.demo-office-wipe[data-toggled='true'] .demo-office-after {
+  clip-path: inset(0);
+}
+
+.demo-office-state {
+  position: absolute;
+  z-index: 2;
+  left: auto;
+  right: calc(1.6 * var(--u));
+  top: calc(1.6 * var(--u));
+  transform: none;
+  padding: calc(.5 * var(--u)) calc(.8 * var(--u));
+  border-left: calc(.25 * var(--u)) solid var(--pixel-gold);
+  background: rgba(5, 12, 25, .86);
+  color: var(--beige);
+  font-family: var(--font-pixel);
+  font-size: calc(.78 * var(--u));
+  letter-spacing: .12em;
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+
+.demo-office-state.after {
+  opacity: 0;
+  transform: translateY(.4em);
+}
+
+.demo-office-wipe[data-toggled='true'] .demo-office-state.before {
+  opacity: 0;
+  transform: translateY(-.4em);
+}
+
+.demo-office-wipe[data-toggled='true'] .demo-office-state.after {
+  opacity: 1;
+  transform: none;
+}
+
+.demo-office-loop {
+  position: absolute;
+  z-index: 3;
+  left: calc(1.6 * var(--u));
+  right: auto;
+  bottom: calc(4.2 * var(--u));
+  transform: none;
+  display: flex;
+  align-items: center;
+  gap: calc(.6 * var(--u));
+  padding: calc(.55 * var(--u)) calc(.9 * var(--u));
+  border: 1px solid rgba(242, 199, 91, .54);
+  border-left: calc(.25 * var(--u)) solid var(--pixel-gold);
+  color: var(--gold-soft);
+  background: rgba(5, 12, 25, .9);
+  box-shadow: 0 calc(.8 * var(--u)) calc(2 * var(--u)) rgba(0, 0, 0, .28);
+  font-family: var(--font-pixel);
+  font-size: calc(.68 * var(--u));
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+.demo-office-loop i {
+  width: calc(1.6 * var(--u));
+  border-top: 1px solid #c89b4b;
+}
+
+.demo-office-loop strong {
+  color: var(--beige);
+}
+
+/* A demo title is a glass corner caption, not a modal. It stays in the
+   corner, readable over the product, and never a solid plate. Deck chrome
+   (progress, folio) hides it with the rest of the furniture; while it is
+   up it must not be clipped by the outgoing slide. */
 .body.body-demo .demo-copy {
   grid-column: 1;
   grid-row: 1;
-  align-self: end;
+  align-self: start;
   justify-self: start;
+  z-index: 4;
   min-width: 0;
-  /* Set against the longest of the seven headlines rather than by eye: "Every
-     object in this room was bought with LSAT questions." is 56 characters at
-     `--t-sm`, which needs about 590px of measure on a 1920 screen to hold two
-     lines. At 34u it broke to three — the founders' complaint about the rail was
-     partly that a five-word headline was wrapping to three lines, and a narrower
-     plate is the same mistake at a larger size. 38u leaves 641px inside the
-     plate's padding, and the ratio is scale-invariant because both the measure
-     and the type are in `--u`, so two lines holds at 1366 and at 2560 alike.
-     Still under the 40u a scene caption gets, which has a standfirst and a ledger
-     to carry. */
-  max-width: calc(38 * var(--u));
+  max-width: calc(36 * var(--u));
+  margin: calc(.4 * var(--u));
+  padding: calc(1.15 * var(--u)) calc(1.35 * var(--u)) calc(1.25 * var(--u));
+  border: 1px solid rgba(242, 199, 91, .32);
+  border-left-width: calc(.28 * var(--u));
+  background: rgba(9, 16, 28, .34);
+  backdrop-filter: blur(14px) saturate(1.18);
+  -webkit-backdrop-filter: blur(14px) saturate(1.18);
+  box-shadow: 0 calc(.6 * var(--u)) calc(1.8 * var(--u)) rgba(4, 8, 14, .16);
+  pointer-events: none;
 }
 
-/* The route line, at the head of the plate.
-   It is `.demo-bar` — see `DemoRoute` — so the base stylesheet gives it the
-   monospace, the tracking and the gold chip already. What it must not bring with
-   it is the *bar*: a full-width engraved plate with a 2px rule under it, which
-   inside a caption plate reads as a title bar for the caption. */
-.body.body-demo .demo-copy .demo-bar {
-  margin-bottom: calc(1.4 * var(--u));
-  padding: 0;
-  border-bottom: 0;
-  background: none;
+.is-live .body.body-demo .demo-copy {
+  animation: none;
 }
 
-.body.body-demo .demo-copy .demo-bar code {
-  font-size: calc(.98 * var(--u));
-  color: var(--gold-soft);
-  opacity: .72;
-}
-
-.body.body-demo .demo-copy .demo-chip {
-  width: calc(1.9 * var(--u));
-  height: calc(1.9 * var(--u));
-}
-
-/* The presenter's budget bar, which is 24u wide by default and would set the
-   plate's width on its own — a 460px rule deciding the measure of a headline. */
+.body.body-demo .demo-copy .demo-bar,
 .body.body-demo .demo-copy .demo-budget {
-  justify-content: flex-start;
-  margin-bottom: calc(1.4 * var(--u));
+  display: none;
 }
 
-.body.body-demo .demo-copy .demo-budget-bar {
-  flex: 1 1 auto;
-  width: auto;
+.body.body-demo .demo-copy .eyebrow {
+  margin-bottom: calc(.45 * var(--u));
+  font-size: calc(.92 * var(--u));
+  letter-spacing: .16em;
+}
+
+.body.body-demo .demo-copy .display {
+  font-size: calc(2.05 * var(--u));
+  line-height: 1.05;
+  letter-spacing: -.015em;
 }

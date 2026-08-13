@@ -99,7 +99,7 @@ export function ConfidenceTiles({ spec, active, reduced }: FigureBody<Confidence
                 className="fig-ct-confidence"
                 style={{
                   opacity: phase >= 2 ? 1 : 0,
-                  transform: phase >= 2 ? 'translateY(0) scale(1)' : 'translateY(-1.1em) scale(.86)',
+                  transform: phase >= 2 ? 'translateY(0)' : 'translateY(.2em)',
                 }}
               >
                 {tile.confidence}

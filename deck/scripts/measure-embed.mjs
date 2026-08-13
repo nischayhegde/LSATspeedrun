@@ -19,15 +19,16 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const APP = 'http://localhost:5173'
+const APP = APP_ORIGIN
 const BASE = 'http://localhost:5180'
 const OUT = resolve(DECK_DIR, '.deck-shots/measure')
 mkdirSync(OUT, { recursive: true })
 
-const SLIDES = ['demo-case-answer', 'demo-case-verdict-review', 'demo-mega-litigation', 'demo-office-transformation', 'demo-map-and-firm']
+const SLIDES = ['demo-case-answer', 'demo-office-treasury', 'demo-mega-litigation', 'demo-clients-walk-in', 'demo-map-and-firm']
 
 const browser = await launchChromium()
 const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })

@@ -18,7 +18,7 @@
   --ink: #182027;
   --navy: #102735;
   --navy-2: #18394a;
-  --muted: #6f756f;
+  --muted: #5c635c;
   --line: #d8d0c2;
   --surface: #fffdf7;
   --paper: #f8f3e8;
@@ -130,20 +130,20 @@
   --plate: #0d1626;
 
   /* --- the deck's display palette --------------------------------
-     `NARRATIVE.md` fixes these six values, and the copy leans on them:
-     verdict red is spent exactly twice in twenty-three slides, and slides
-     invert between a blue field and a beige one as a rhetorical device, so
-     both directions have to be first-class rather than one being a tint of
-     the other. Kept separate from the app tokens above because the ported
-     `app-art` CSS reads those, and the 3D scenes have to keep matching the
-     real game rather than the deck. */
-  --blue: #1b2f6b;
-  --blue-lit: #2a4bb8;
-  --blue-deep: #0d1734;
-  --beige: #efe6d6;
-  --beige-dim: #d8cbb4;
-  --deck-ink: #0e1524;
-  --stamp: #a8321f;
+     Field aliases of the product tokens in `frontend/src/styles.css`.
+     The deck used to carry a second royal-blue / beige set (`#1b2f6b`,
+     `#efe6d6`) that did not appear on the site; `--blue` is now `--navy`
+     and `--beige` is `--paper`, so a painted slide and the live app are
+     the same colours. `--stamp` is `--red`. The invert between a navy
+     field and a paper one is still the rhetorical device — only the
+     hexes changed, to the ones the product already ships. */
+  --blue: var(--navy);
+  --blue-lit: var(--navy-2);
+  --blue-deep: var(--pixel-night);
+  --beige: var(--paper);
+  --beige-dim: var(--line);
+  --deck-ink: var(--ink);
+  --stamp: var(--red);
 
   /* Whatever the current field is, and the two colours that read on it.
      Slide bodies flip these once via `[data-field]`, and everything
@@ -194,12 +194,12 @@ button {
 }
 
 ::selection {
-  color: #fff4ce;
-  background: #8d4c43;
+  color: var(--gold-soft);
+  background: var(--red);
 }
 
 :focus-visible {
-  outline: 3px solid #fff3ac;
+  outline: 3px solid var(--pixel-gold);
   outline-offset: 3px;
 }
 
@@ -226,10 +226,19 @@ button {
 }
 
 .deck-grain {
-  /* The app's fixed grain layer, at the app's own numbers. */
-  opacity: .3;
+  /*
+     Texture is a signature, not a veil.
+
+     This used to copy the product's `.3` grain opacity onto every projected
+     pixel: paper slides, live iframes, fine dashboard type and WebGL scenes.
+     At projector scale that softened the product UI and made the office look
+     under-resolved even when its render target was healthy. Keep a trace on
+     the deck's flat blue field, then turn it down (or off) on surfaces that
+     already carry their own detail below.
+  */
+  opacity: .075;
   background-image: radial-gradient(rgba(28, 36, 42, .08) .65px, transparent .65px);
-  background-size: 5px 5px;
+  background-size: 7px 7px;
   /* Projected large, a static dot field reads as a dirty screen rather
      than as film. A slow drift of a couple of pixels is enough to make
      it read as grain, and it is a transform so it stays on the
@@ -238,8 +247,44 @@ button {
 }
 
 .deck-scanlines {
-  opacity: .12;
+  opacity: .025;
   background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(8, 12, 17, .18) 4px);
+}
+
+/* Warm paper already has fibres. A second raster texture only dirties type. */
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-grain {
+  opacity: .018;
+}
+
+.deck:has(.deck-layer.is-live[data-field='beige']) .deck-scanlines {
+  opacity: 0;
+}
+
+/*
+   The live product and its captured stills must remain pixel-crisp. They carry
+   the app's own paper, borders and texture; putting deck grain over them made
+   the demo look like a compressed video—the opposite of why it is live.
+*/
+.deck:has(.deck-layer.is-live[data-kind='demo']) .deck-grain,
+.deck:has(.deck-layer.is-live[data-kind='demo']) .deck-scanlines {
+  opacity: 0;
+}
+
+.deck:has(.deck-layer.is-live[data-kind='demo']) .deck-vignette {
+  opacity: 0;
+}
+
+/* Ported WebGL scenes already have authored materials and lighting. */
+.deck:has(.deck-appscene[data-role='current']) .deck-grain {
+  opacity: .025;
+}
+
+.deck:has(.deck-appscene[data-role='current']) .deck-scanlines {
+  opacity: .008;
+}
+
+.deck:has(.deck-appscene[data-role='current']) .deck-vignette {
+  opacity: .24;
 }
 
 /* One more layer than the app has: a vignette. A projector or a large
@@ -301,7 +346,7 @@ button {
 /* A warm-white plate for anything that has to be read as a document.
    Laid-paper fibres plus one light falloff, exactly as `.app-shell`. */
 .paper-plate {
-  color: #21262b;
+  color: var(--ink);
   background-color: var(--paper);
   background-image: var(--laid-paper), linear-gradient(rgba(255, 250, 235, .5), rgba(255, 250, 235, 0));
   background-size: 64px 64px, 100% 320px;

@@ -31,9 +31,10 @@ import './slide-number.css'
  * - **The start card:** nothing, and nothing had to be done for it. The card is
  *   opaque at z-index 2000 and this is at 890, so it is simply behind it — and
  *   the card carries the deck's length in its own kicker, where it belongs.
- * - **The close, 24 of 24:** shown, and it is the one place the total earns its
- *   keep. The deck sits on the close for the whole of Q&A, and "24/24" is what
- *   tells a room that the argument is finished rather than paused.
+ * - **The last slide:** shown, and it is the one place the total earns its
+ *   keep. The deck sits on `close-one-stop-shop` for the whole of Q&A, and
+ *   "23/23" is what tells a room that the argument is finished rather than
+ *   paused.
  *
  * ## Legibility, which is the only hard part
  *

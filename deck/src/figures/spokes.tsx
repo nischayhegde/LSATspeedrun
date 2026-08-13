@@ -79,7 +79,7 @@ export function Spokes({ spec, active, reduced }: FigureBody<SpokesFigure>) {
                   data-emphasis={series.emphasis ? 'true' : 'false'}
                   points={shape}
                   vectorEffect="non-scaling-stroke"
-                  style={{ opacity: shown ? 1 : 0, transform: shown ? 'scale(1)' : 'scale(.04)' }}
+                  style={{ opacity: shown ? 1 : 0, transform: shown ? 'scale(1)' : 'scale(.92)' }}
                 />
               )
             })}

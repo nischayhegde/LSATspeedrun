@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 
 /**
@@ -117,14 +117,18 @@ export function useBoxSize<T extends Element>(): [RefObject<T | null>, { w: numb
   const ref = useRef<T>(null)
   const [box, setBox] = useState({ w: 0, h: 0 })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = ref.current
     if (!node) return
     const read = () => {
-      const rect = node.getBoundingClientRect()
-      // Rounded, because a fractional layout size churns state every frame the
-      // stage tweens through and each churn is a React commit on a live slide.
-      const next = { w: Math.round(rect.width), h: Math.round(rect.height) }
+      // Layout size, not the visual box. `getBoundingClientRect` includes the
+      // slide layer's entrance scale and any parent `scale()` from the fit
+      // guard, which rewrote the clock ring's viewBox a few percent large and
+      // then snapped it back when the layer settled.
+      const next = {
+        w: Math.round(node instanceof HTMLElement ? node.offsetWidth : node.clientWidth),
+        h: Math.round(node instanceof HTMLElement ? node.offsetHeight : node.clientHeight),
+      }
       setBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next))
     }
     read()
@@ -181,9 +185,14 @@ export function useBoxSize<T extends Element>(): [RefObject<T | null>, { w: numb
  *   accommodate something no one can see.
  * - `clip-path` marks the deck's screen-reader-only text, which is meant to be
  *   invisible and is skipped whole.
- * - Bounds are divided by the scale already applied, so the measurement is of
- *   the figure's natural size and the result is a fixed point rather than a
- *   feedback loop.
+ * - Bounds are *layout* boxes (`offsetWidth` / the offset chain), not
+ *   `getBoundingClientRect`. Entrance translates, the slide layer's arrival
+ *   scale, and this guard's own `scale()` all inflate the visual rect and then
+ *   vanish — writing a fit from that rect, then again when it settled, is the
+ *   figure jump the room sees. Layout size does not move with a transform, so
+ *   the measurement is of the composition at rest even while pieces are still
+ *   arriving. The fit transform is not in the layout, so there is no feedback
+ *   loop to undo.
  * - `INK` is the allowance for the difference between a text node's border box
  *   and the ink inside it: a descender sits a pixel or two below the line box,
  *   and this measurement is of boxes.
@@ -193,65 +202,88 @@ const INK = 8
 /** Never shrink past this: below it, fix the slide rather than the scale. */
 const FLOOR = 0.62
 
+/** Ignore stage-size noise below a layout pixel. */
+const STAGE_DEAD = 1
+
 export function useFitScale<T extends HTMLElement>(active: boolean, reduced: boolean): [RefObject<T | null>, number] {
   const ref = useRef<T>(null)
   const [scale, setScale] = useState(1)
-  const applied = useRef(1)
-  applied.current = scale
+  const stageSize = useRef({ w: 0, h: 0 })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = ref.current
     const stage = node?.parentElement
     if (!node || !stage) return
+    // The outgoing layer keeps whatever scale it was measured at, so a figure
+    // does not pop to 1 while it is still on screen behind the arrival.
+    if (!active) return
+
+    let debounce = 0
+    let cancelled = false
 
     const measure = () => {
-      const limit = stage.getBoundingClientRect()
-      if (limit.width < 1 || limit.height < 1) return
+      if (cancelled) return
+      const limitW = stage.clientWidth
+      const limitH = stage.clientHeight
+      if (limitW < 1 || limitH < 1) return
       const bounds = contentBounds(node)
-      if (!bounds) return
-      const current = applied.current || 1
-      const needed = { w: bounds.w / current, h: bounds.h / current }
-      if (needed.w < 1 || needed.h < 1) return
-      // Most of the set is written to fill its stage exactly, so `needed` and
+      if (!bounds || bounds.w < 1 || bounds.h < 1) return
+      // Most of the set is written to fill its stage exactly, so `bounds` and
       // the stage agree to the pixel and there is nothing to correct. The guard
       // only engages on a figure that genuinely wants more room than it has;
       // `INK` is then spent buying the descenders clearance, which is the
       // difference between the box this measures and the glyphs it paints.
-      const overflow = Math.max(needed.h - limit.height, needed.w - limit.width)
+      const overflow = Math.max(bounds.h - limitH, bounds.w - limitW)
       const next = overflow <= 0.5
         ? 1
         : Math.min(
           1,
-          (limit.height - INK * 2) / needed.h,
-          (limit.width - INK * 2) / needed.w,
+          (limitH - INK * 2) / bounds.h,
+          (limitW - INK * 2) / bounds.w,
         )
       const rounded = Math.max(FLOOR, Math.floor(next * 500) / 500)
-      // A dead band, so a fractional layout change during a stage tween cannot
-      // put this into a commit loop on a live slide.
+      stageSize.current = { w: limitW, h: limitH }
+      // A dead band, so a fractional layout change cannot put this into a
+      // commit loop on a live slide.
       setScale((prev) => (Math.abs(prev - rounded) < 0.006 ? prev : rounded))
     }
 
     measure()
-    const observer = new ResizeObserver(measure)
+
+    const schedule = () => {
+      window.clearTimeout(debounce)
+      debounce = window.setTimeout(measure, reduced ? 16 : 80)
+    }
+
+    const observer = new ResizeObserver(() => {
+      const w = stage.clientWidth
+      const h = stage.clientHeight
+      if (
+        Math.abs(w - stageSize.current.w) < STAGE_DEAD
+        && Math.abs(h - stageSize.current.h) < STAGE_DEAD
+      ) return
+      schedule()
+    })
     observer.observe(stage)
 
-    // The figures animate in over as much as three and a half seconds, and a
-    // measurement taken mid-entrance is a measurement of a composition that is
-    // not the one the room ends up reading. These are the beats after which
-    // something in the set has finished arriving.
-    const timers = (reduced ? [80] : [80, 700, 1600, 2600, 3800])
-      .map((ms) => window.setTimeout(measure, ms))
+    // One more read after the faces have arrived, in case a deep-link opened
+    // the deck before `warm-up` finished. Already-ready fonts resolve in a
+    // microtask and the dead band keeps that from being a write.
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) schedule()
+    }).catch(() => undefined)
 
     return () => {
+      cancelled = true
       observer.disconnect()
-      for (const timer of timers) window.clearTimeout(timer)
+      window.clearTimeout(debounce)
     }
   }, [active, reduced])
 
   return [ref, scale]
 }
 
-/** Union of everything a figure actually paints, in screen pixels. */
+/** Union of everything a figure actually lays out, in the figure's own pixels. */
 function contentBounds(root: HTMLElement): { w: number; h: number } | null {
   let top = Infinity
   let left = Infinity
@@ -265,12 +297,12 @@ function contentBounds(root: HTMLElement): { w: number; h: number } | null {
       // The deck's idiom for copy that is spoken but not shown.
       if (style.clipPath !== 'none') continue
 
-      const rect = child.getBoundingClientRect()
-      if (rect.width > 0 && rect.height > 0) {
-        if (rect.top < top) top = rect.top
-        if (rect.left < left) left = rect.left
-        if (rect.bottom > bottom) bottom = rect.bottom
-        if (rect.right > right) right = rect.right
+      const box = layoutBox(child, root)
+      if (box && box.w > 0 && box.h > 0) {
+        if (box.top < top) top = box.top
+        if (box.left < left) left = box.left
+        if (box.top + box.h > bottom) bottom = box.top + box.h
+        if (box.left + box.w > right) right = box.left + box.w
       }
 
       // A clipper is the boundary of its own subtree: what is inside it is
@@ -283,6 +315,62 @@ function contentBounds(root: HTMLElement): { w: number; h: number } | null {
 
   if (!Number.isFinite(top) || !Number.isFinite(left)) return null
   return { w: right - left, h: bottom - top }
+}
+
+/**
+ * An element's layout box relative to `root`, ignoring CSS transforms.
+ *
+ * `offsetLeft` / `offsetWidth` are the pre-transform border box. Walking the
+ * offsetParent chain puts that box in the figure's coordinates even when an
+ * ancestor (or the element itself) is mid-translate on the way in.
+ */
+function layoutBox(element: Element, root: HTMLElement): { left: number; top: number; w: number; h: number } | null {
+  if (element instanceof HTMLElement) {
+    const w = element.offsetWidth
+    const h = element.offsetHeight
+    if (w <= 0 && h <= 0) return null
+    const origin = offsetFrom(element, root)
+    if (!origin) return visualFallback(element, root)
+    return { left: origin.x, top: origin.y, w, h }
+  }
+  return visualFallback(element, root)
+}
+
+function offsetFrom(element: HTMLElement, root: HTMLElement): { x: number; y: number } | null {
+  let x = 0
+  let y = 0
+  let node: HTMLElement | null = element
+  while (node && node !== root) {
+    x += node.offsetLeft
+    y += node.offsetTop
+    const parent = node.offsetParent
+    if (!(parent instanceof HTMLElement)) return null
+    if (parent !== root && !root.contains(parent)) return null
+    x += parent.clientLeft
+    y += parent.clientTop
+    node = parent === root ? null : parent
+  }
+  return { x, y }
+}
+
+/**
+ * SVG nodes have no offset chain. Map their visual rect into the root's layout
+ * space by undoing the root's own visual scale (the fit guard, a layer
+ * arrival), so a parent translate on an HTML wrapper is the only remaining
+ * error — and those wrappers are measured by `offsetFrom` instead.
+ */
+function visualFallback(element: Element, root: HTMLElement): { left: number; top: number; w: number; h: number } | null {
+  const rootRect = root.getBoundingClientRect()
+  const rect = element.getBoundingClientRect()
+  if (rootRect.width < 1 || rootRect.height < 1 || rect.width <= 0 || rect.height <= 0) return null
+  const sx = root.offsetWidth / rootRect.width
+  const sy = root.offsetHeight / rootRect.height
+  return {
+    left: (rect.left - rootRect.left) * sx,
+    top: (rect.top - rootRect.top) * sy,
+    w: rect.width * sx,
+    h: rect.height * sy,
+  }
 }
 
 /** `M:SS.cc`, the speedrun convention, zero-padded so the readout never reflows. */

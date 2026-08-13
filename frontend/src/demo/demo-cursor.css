@@ -1,0 +1,57 @@
+/*
+ * The presenter-shaped pointer the live demos drive. Shared by the office,
+ * firm, mega-litigation and autoplay sequences so a click never teleports.
+ *
+ * Position is written from JS (`left` / `top`) over a few hundred milliseconds
+ * rather than snapped; CSS only handles appearing, the press squash, and the
+ * click ring. `.is-demo-hover` is the stand-in for `:hover`, because a
+ * synthetic pointer does not engage the real one.
+ */
+.deck-demo-cursor {
+  width: 22px;
+  height: 30px;
+  position: fixed;
+  z-index: 2400;
+  opacity: 0;
+  transform: translate(-4px, -3px) scale(.84);
+  pointer-events: none;
+  transition: opacity .28s ease, transform .16s ease;
+}
+.deck-demo-cursor::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(0 0, 0 82%, 29% 62%, 48% 100%, 66% 91%, 47% 55%, 80% 55%);
+  background: #fff4ce;
+  filter: drop-shadow(0 2px 1px #07101b) drop-shadow(0 0 5px rgba(242, 199, 91, .8));
+}
+.deck-demo-cursor i {
+  width: 34px;
+  height: 34px;
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  border: 2px solid rgba(242, 199, 91, .8);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(.45);
+}
+.deck-demo-cursor[data-visible='true'] {
+  opacity: 1;
+  transform: translate(-4px, -3px) scale(1);
+}
+.deck-demo-cursor[data-pressed='true'] {
+  transform: translate(-4px, -3px) scale(.82);
+}
+.deck-demo-cursor[data-pressed='true'] i {
+  animation: deck-cursor-click .38s ease-out both;
+}
+@keyframes deck-cursor-click {
+  50% { opacity: 1; }
+  to { opacity: 0; transform: scale(1.35); }
+}
+
+.is-demo-hover {
+  outline: 2px solid rgba(242, 199, 91, .72);
+  outline-offset: 3px;
+}

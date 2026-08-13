@@ -28,6 +28,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -39,7 +40,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
 }))
 
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/cold-start')
 mkdirSync(OUT, { recursive: true })
 
@@ -88,7 +89,7 @@ console.log('\n\u2022 A cold browser opens the deck and starts the show')
     if (match) warmed.add(match[1])
   })
 
-  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(`${BASE}/?hud`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForSelector('.pf-strip', { timeout: 20000 }).catch(() => {
     fail('the start card never rendered its preflight strip')
   })
@@ -205,7 +206,7 @@ console.log('\n\u2022 A warm profile is not signed in again')
 {
   const context = await coldContext()
   const page = await context.newPage()
-  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(`${BASE}/?hud`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForFunction(() => !document.querySelector('.pf-dot.is-checking'), { timeout: 40000 }).catch(() => undefined)
   const first = (await context.cookies()).find((cookie) => cookie.name === 'lsat_session')?.value ?? ''
 
@@ -239,7 +240,7 @@ console.log('\n\u2022 When automatic sign-in cannot work, the start card says so
     body: JSON.stringify({ error: 'not_found', message: 'Development sign-in is disabled.' }),
   }))
   const page = await context.newPage()
-  await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(`${BASE}/?hud`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForFunction(() => !document.querySelector('.pf-dot.is-checking'), { timeout: 40000 }).catch(() => undefined)
 
   const state = await page.evaluate(() => ({

@@ -1,5 +1,5 @@
 import type { SignalIndexFigure } from './types'
-import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
+import { usePhase, vars, type FigureBody } from './kit'
 
 /**
  * `dashboard-everything` — eleven signals, and the one number they are read into.
@@ -41,7 +41,7 @@ import { DRAW_PX, pct, usePhase, vars, type FigureBody } from './kit'
  */
 
 /** Cumulative milliseconds: rows, wires, the index, the honesty tags. */
-const MARKS = [40, 620, 1500, 2100] as const
+const MARKS = [40, 420, 800, 1180, 1580] as const
 
 /** About 55ms a row, so eleven land inside the wires' own reveal. */
 const ROW_STAGGER_MS = 55
@@ -54,90 +54,54 @@ const ROW_STAGGER_MS = 55
  * of the frame because eleven lines fanning into one point need enough run for
  * the fan to read as a fan rather than as a bracket.
  */
-const WIRE_FROM = 46
-const HUB = { x: 68, y: 50 } as const
-
 export function SignalIndex({ spec, active, reduced }: FigureBody<SignalIndexFigure>) {
   const phase = usePhase(active, reduced, MARKS)
-  const forming = phase >= 4
-
-  // Heaviest first. The registry lists them in the order the product's own
-  // dashboard does, which is not an order the room can see; sorted by weight,
-  // the column's own shape says which signals carry the index.
-  const rows = [...spec.nodes].sort((a, b) => b.weight - a.weight)
-  const maxWeight = Math.max(...rows.map((node) => Math.abs(node.weight)), Number.EPSILON)
-
-  /** The vertical centre of row `index`, in percent of the box. */
-  const rowY = (index: number) => ((index + 0.5) / rows.length) * 100
+  const byLabel = new Map(spec.nodes.map((node) => [node.label, node]))
+  const groups = [
+    {
+      label: 'Performance',
+      nodes: ['Accuracy by question type', 'Pace against target time', 'Reasoning quality grade'],
+    },
+    {
+      label: 'Diagnosis',
+      nodes: ['Confidence calibration', 'Weak-type next focus', 'Review retrievability and recovery'],
+    },
+    {
+      label: 'Coverage',
+      nodes: ['Full-test section breakdown', 'Trend vs. your previous window', 'Evidence confidence'],
+    },
+    {
+      label: 'Experiments',
+      nodes: ['Per-method lift', 'Comparison readiness'],
+    },
+  ].map((group) => ({ ...group, nodes: group.nodes.map((label) => byLabel.get(label)).filter(Boolean) }))
 
   return (
-    <div className="fig-si" data-forming={forming ? 'true' : 'false'}>
-      <ol className="fig-si-rows">
-        {rows.map((node, index) => (
-          <li
-            className="fig-si-row"
-            key={node.label}
-            data-highlight={node.highlight && phase >= 3 ? 'true' : 'false'}
-            data-forming={node.forming ? 'true' : 'false'}
-            style={vars({
-              opacity: phase >= 1 ? 1 : 0,
-              transform: phase >= 1 ? 'none' : 'translateX(-.6em)',
-              '--fig-delay': `${index * ROW_STAGGER_MS}ms`,
-            })}
-          >
-            {/* The tag leads the label rather than trailing it, so that every
-                label still ends on the same vertical — which is where its wire
-                starts. A trailing tag would push two of the eleven rows out of
-                the column and break the one alignment the figure has. */}
-            {node.forming ? (
-              <em className="fig-si-tag" style={{ opacity: forming ? 1 : 0 }}>
-                evidence forming
-              </em>
-            ) : null}
-            <span className="fig-si-label">{node.label}</span>
-          </li>
+    <div className="fig-si fig-si-pillars">
+      <div className="fig-si-groups">
+        {groups.map((group, groupIndex) => (
+          <section className="fig-si-pillar" key={group.label} style={{ opacity: phase >= groupIndex + 1 ? 1 : 0 }}>
+            <h4>{group.label}</h4>
+            <ul>
+              {group.nodes.map((node, nodeIndex) => node ? (
+                <li
+                  key={node.label}
+                  data-highlight={node.highlight ? 'true' : 'false'}
+                  style={vars({ '--fig-delay': `${nodeIndex * ROW_STAGGER_MS}ms` })}
+                >
+                  <span>{node.label}</span>
+                  {node.forming ? <em>evidence forming</em> : null}
+                </li>
+              ) : null)}
+            </ul>
+          </section>
         ))}
-      </ol>
-
-      {/* The convergence. `preserveAspectRatio="none"` because the endpoints are
-          fractions of the box on both axes and must stay on the rows they came
-          from; the strokes are kept honest with `non-scaling-stroke`, so the
-          stretch is paid on the geometry and not on the line weights. */}
-      <svg
-        className="fig-si-wires"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {rows.map((node, index) => (
-          <path
-            className="fig-si-wire"
-            key={node.label}
-            data-highlight={node.highlight ? 'true' : 'false'}
-            data-forming={node.forming ? 'true' : 'false'}
-            // A cubic with both handles horizontal, so every wire leaves its row
-            // level and arrives at the hub level. A straight line would arrive
-            // at eleven different angles and read as a starburst.
-            d={`M ${WIRE_FROM} ${rowY(index).toFixed(2)}`
-              + ` C ${WIRE_FROM + 14} ${rowY(index).toFixed(2)},`
-              + ` ${HUB.x - 14} ${HUB.y},`
-              + ` ${HUB.x} ${HUB.y}`}
-            vectorEffect="non-scaling-stroke"
-            strokeWidth={0.7 + (Math.abs(node.weight) / maxWeight) * 2.4}
-            style={vars({
-              strokeDashoffset: phase >= 2 ? 0 : DRAW_PX,
-              '--fig-delay': `${index * ROW_STAGGER_MS}ms`,
-            })}
-          />
-        ))}
-      </svg>
-
-      <div
-        className="fig-si-index"
-        style={vars({ left: pct(HUB.x / 100), opacity: phase >= 3 ? 1 : 0 })}
-      >
+      </div>
+      <i className="fig-si-feed" style={{ transform: `scaleX(${phase >= 4 ? 1 : 0})` }} />
+      <div className="fig-si-index" style={{ opacity: phase >= 5 ? 1 : 0 }}>
         <b>{spec.centre.value}</b>
         <span>{spec.centre.label}</span>
+        <small>accuracy · pace · reasoning</small>
       </div>
     </div>
   )

@@ -6,10 +6,12 @@ import { SLIDES } from '../slides'
 import { registerProbe, withdrawProbe } from './probe'
 import { buildLettering, setCopy, type LetteringItem } from './room-lettering'
 import { CameraRig, disposeTree, seededRandom } from './scene-kit'
+import { STAGE_COUNSEL_LOOK, applyStandingLegs, closeStance } from './stage-counsel'
 import type { DeckScene, SceneContext } from './types'
 
 /**
- * SLIDE 24 — the close. One figure, one room, held for the whole Q&A.
+ * `close-one-stop-shop` — one figure, one room, the last slide. Held for
+ * the whole of Q&A. `game-by-design` is the diagram immediately before it.
  *
  * The founders rejected what was here before — first the app's own office
  * interior, then a beige room with two doorways cut into it — for the same
@@ -117,23 +119,6 @@ const ROOM = {
 
 /** Where she stands. Stage right, and far enough downstage to be lit. */
 const COUNSEL = { x: 4.35, z: -1.1 } as const
-
-/**
- * Where the copy stands, as the left end of the eyebrow's baseline.
- *
- * Depth is the interesting number and it is bounded on both sides. Her cast
- * shadow runs from her soles at z −1.1 to its head about z −4.3, so lettering
- * downstage of −4.6 stands *in* it; and the further upstage it goes the smaller
- * the frame makes it, because a block standing on the floor has its base fixed
- * to the horizon by its distance and cannot be lowered without moving nearer.
- * −4.6 is as close to the lens as the copy can be set and still be clear of the
- * shadow — which is the same as saying it is as large as it can be.
- *
- * `y` is not a free parameter: it is the block's own height, so that the last
- * line's baseline lands on y 0 and the whole thing stands on the floor rather
- * than floating above it. `letteringLines` returns the leads it is summed from.
- */
-const LETTERING = { x: -3.4, z: -4.6 } as const
 
 /** The framing's own vertical field of view, and the aspect it was set at. */
 const BASE_FOV = 33
@@ -496,10 +481,11 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
         crooked slide. With the target directly ahead of the lens the pitch is
         the only rotation and the floor line is level to the pixel.
 
-        The parallax is the smallest in the deck: this frame is held for the
-        whole Q&A, and a camera that swims with the presenter's mouse for that
-        long is a distraction, but a completely locked one reads as a
-        photograph rather than a room.
+        The parallax is the smallest in the deck: this frame used to be held
+        for the whole Q&A, and a camera that swims with the presenter's mouse
+        for that long is a distraction, but a completely locked one reads as a
+        photograph rather than a room. This frame is held for the whole Q&A,
+        so the parallax stays small.
       */
       wide: { position: [3, 6.2, 8.6], target: [3, 2.9, -1.1], fov: 33, parallax: .22 },
     },
@@ -524,7 +510,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   // One inverted box. A `BoxGeometry` carries six material groups, so the
   // floor, the ceiling and the walls can each be their own value at the cost
   // of six draw calls and twelve triangles for the entire set.
-  const wall = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .92, metalness: 0 })
+  const wall = new THREE.MeshBasicMaterial({ color: ROOM_PALETTE.blueDeep })
   /*
     ONE FIELD, AND THE REASON IT TAKES TWO PAINTS TO GET ONE COLOUR.
 
@@ -554,9 +540,9 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     The happy part is that no colour was invented for this. Both values are
     already in `theme.css`, and the room turns out to want them adjacent.
   */
-  const wallBack = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blue, roughness: .94, metalness: 0 })
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.field, roughness: .78, metalness: .04 })
-  const ceiling = new THREE.MeshStandardMaterial({ color: ROOM_PALETTE.blueDeep, roughness: .96, metalness: 0 })
+  const wallBack = new THREE.MeshBasicMaterial({ color: ROOM_PALETTE.blueDeep })
+  const floorMaterial = new THREE.MeshBasicMaterial({ color: ROOM_PALETTE.blueDeep })
+  const ceiling = new THREE.MeshBasicMaterial({ color: ROOM_PALETTE.blueDeep })
   // Groups are ordered +x, -x, +y, -y, +z, -z. The +z face is behind the lens.
   const shell = new THREE.Mesh(
     new THREE.BoxGeometry(ROOM.width, ROOM.height, ROOM.depth),
@@ -564,8 +550,21 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   )
   for (const material of [wall, wallBack, floorMaterial, ceiling]) material.side = THREE.BackSide
   shell.position.set(0, ROOM.height / 2, ROOM.centreZ)
-  shell.receiveShadow = true
   scene.add(shell)
+
+  /*
+    The room is one unlit navy field; the shadow is a separate transparent
+    receiver. This keeps wall, floor and background pixel-identical while
+    preserving the long real shadow the camera angle was chosen to show.
+  */
+  const shadowReceiver = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROOM.width, ROOM.depth),
+    new THREE.ShadowMaterial({ color: 0x030816, opacity: .72 }),
+  )
+  shadowReceiver.rotation.x = -Math.PI / 2
+  shadowReceiver.position.set(0, .004, ROOM.centreZ)
+  shadowReceiver.receiveShadow = true
+  scene.add(shadowReceiver)
 
   /*
     THERE IS NO SKIRTING ANY MORE, AND THAT IS THE SECOND HALF OF THE ONE FIELD.
@@ -590,25 +589,11 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
     `Questions?`; it moved from the architecture onto the type.
   */
 
-  // --- the copy, standing in the room --------------------------------------
+  // Copy is now screen-space DOM, so it stays crisp and square to the audience
+  // at every aspect ratio. Keep the generated group attached but hidden for
+  // this revision so the scene's disposal path still owns its resources.
   const lettering = buildLettering(letteringLines())
-  /*
-    Stood on its lowest ink, not on its last baseline.
-
-    Standing it on the baseline is the obvious reading of "on the floor" and it
-    is wrong, in a way that took a while to see: `Questions?` is the bottom
-    line, and Archivo's `Q` hangs its tail 0.13em below the baseline. With the
-    baseline on y 0 the tail is *inside the floor*, and the room's last word
-    renders "Ouestions?" — at every size, in flat and extruded alike, which is
-    what ruled out the extrusion as the cause.
-
-    So the offset comes from the built geometry's own bounds rather than from
-    the leads, which also means it stays correct for copy this scene has never
-    seen: a headline with no descender in it needs a different lift from one
-    ending in "pay.", and neither is a number worth maintaining by hand.
-  */
-  const bounds = new THREE.Box3().setFromObject(lettering.group)
-  lettering.group.position.set(LETTERING.x, -bounds.min.y, LETTERING.z)
+  lettering.group.visible = false
   scene.add(lettering.group)
 
   // --- light ---------------------------------------------------------------
@@ -686,15 +671,9 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   scene.add(fill)
 
   // --- the counsel ---------------------------------------------------------
-  const seed = 90231
-  const counsel: StylizedCounselRig = buildStylizedCounsel('female', 13, {
-    role: 'counsel',
-    paletteSeed: seed,
-    // ADOPTION trap one: the scale the caller will apply, declared up front so
-    // curved primitives are cut for the size they are actually drawn at. 1.0
-    // is the portrait scale and the one the foot-planting suite is verified at.
-    renderScale: 1,
-  })
+  const counsel: StylizedCounselRig = buildStylizedCounsel('male', 13, STAGE_COUNSEL_LOOK)
+  counsel.satchel.visible = false
+  closeStance(counsel)
 
   const holder = new THREE.Group()
   holder.add(counsel.root)
@@ -721,7 +700,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   // ADOPTION trap three: `reduced` is passed at construction. An actor built
   // without it and then simply not updated is left in a bind pose, which is a
   // T-pose-ish rest no state ever displays.
-  const actor = new HumanoidActor(counsel, { seed, state: 'idle', reduced: context.reduced })
+  const actor = new HumanoidActor(counsel, { seed: STAGE_COUNSEL_LOOK.paletteSeed, state: 'idle', reduced: context.reduced })
   const actors = [actor]
 
   // ======================= THE FOLD, AND HOW IT IS HELD ======================
@@ -856,7 +835,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
   }
 
   // --- ambient life --------------------------------------------------------
-  const random = seededRandom(seed)
+  const random = seededRandom(STAGE_COUNSEL_LOOK.paletteSeed)
   let stanceRemaining = 4 + random() * 6
   let beatRemaining = 5 + random() * 5
   /** The last two of each, refused on the next draw. Banning only the
@@ -914,6 +893,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
           actor.playGesture('foldArms')
         }
         actor.update(delta)
+        applyStandingLegs(counsel)
         applyFold(1)
         rig.update(delta, context.pointer)
         holdHorizontal()
@@ -941,7 +921,7 @@ export function createCloseRoomScene(context: SceneContext): DeckScene {
       // ADOPTION rule 2: update *after* the body has been placed for this
       // frame, because foot planting works in world space.
       actor.update(delta)
-
+      applyStandingLegs(counsel)
       applyFold(foldWeight(foldClock))
 
       rig.update(delta, context.pointer)

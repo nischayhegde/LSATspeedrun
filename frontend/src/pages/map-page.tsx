@@ -8,11 +8,21 @@ import { useGame } from './shared'
 export function ProgressionMapPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const deckDemo = searchParams.get('deckDemo') === 'final-map'
   const gameQuery = useGame()
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
   return (
-    <div className="map-page empire-game-page">
+    <div className={`map-page empire-game-page${deckDemo ? ' is-deck-demo' : ''}`}>
+      {deckDemo && (
+        <div className="deck-demo-sequence" aria-hidden="true">
+          <span>FINAL DISTRICT</span>
+          <i />
+          <span>LAST HEADQUARTERS</span>
+          <i />
+          <span>EARNED THROUGH CASES</span>
+        </div>
+      )}
       {/* No page header above the map: the title and the standing blurb cost a
           band of the viewport that the world itself is better spent on. The
           rival holding count they carried is now a quiet overlay inside the
@@ -27,6 +37,8 @@ export function ProgressionMapPage() {
         focusRival={searchParams.get('rival')}
         onManage={(tab) => navigate(`/firm?tab=${tab}`)}
         empireValueLabel={formatMoney(game.firm_valuation, true)}
+        demo={deckDemo}
+        finalDemo={deckDemo}
       />
     </div>
   )

@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
 import { Deck } from './deck'
+import { SpeakerView } from './speaker-view'
 import { StartGate } from './start'
 import './styles/theme.css'
 import './styles/deck.css'
@@ -27,8 +28,14 @@ import './styles/deck.css'
  * looking at the card, which is what makes pressing Start cost nothing. See
  * `start/start-screen.tsx`.
  */
+const speakerView = new URLSearchParams(window.location.search).has('speaker')
+
 createRoot(document.getElementById('root')!).render(
-  <StartGate>
-    <Deck />
-  </StartGate>,
+  speakerView
+    ? <SpeakerView />
+    : (
+      <StartGate>
+        <Deck />
+      </StartGate>
+    ),
 )

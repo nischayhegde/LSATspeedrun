@@ -43,6 +43,15 @@ const CACHE_LIMIT = 5
 /** Seconds an ink dissolve between two scenes takes. */
 const DISSOLVE_SECONDS = .85
 
+/** The illustrated grade every scene inherits, restored when a scene does not override it. */
+const STAGE_GRADE = {
+  inkStrength: .62,
+  bands: 11,
+  flatten: .3,
+  grain: .035,
+  saturation: 1.14,
+} as const
+
 type Active = { id: string; scene: DeckScene }
 
 export class DeckStage {
@@ -79,6 +88,7 @@ export class DeckStage {
   frameMs = 0
   private frameAccumulator = 0
   private frameSamples = 0
+  private readonly hostSize = new ResizeObserver(() => this.handleResize())
 
   constructor(options: { reduced: boolean }) {
     this.canvas = document.createElement('canvas')
@@ -104,13 +114,13 @@ export class DeckStage {
     // lands on a keystroke rather than on a load.
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV
     this.renderer.info.autoReset = false
-    // Shadow mapping, on for the whole stage because exactly one scene needs
-    // it and toggling it per scene does not work: `shadowMap.enabled` is part
-    // of every material's program key, so flipping it recompiles every shader
+    // Shadow mapping, on for the whole stage because two scenes need it and
+    // toggling it per scene does not work: `shadowMap.enabled` is part of
+    // every material's program key, so flipping it recompiles every shader
     // in the incoming scene, on the keystroke that shows it. Left on, it costs
     // nothing at all in the scenes that do not use it — the shadow pass only
-    // runs for lights with `castShadow`, and `close-room-scene.ts` has the
-    // only one in the deck.
+    // runs for lights with `castShadow`. `close-room-scene.ts` and
+    // `counsel-stage-scene.ts` are the two that do.
     this.renderer.shadowMap.enabled = true
     // PCF rather than `PCFSoftShadowMap`, which this version of three has
     // deprecated: setting it logs a warning and then silently uses this
@@ -127,13 +137,7 @@ export class DeckStage {
     // length on a bright page; the deck is projected in a dark room, where the
     // app's contour strength turns every silhouette into a hard black line and
     // its banding shows as terraces on a 3-metre panel.
-    this.pass = new IllustratedRenderPass(this.renderer, {
-      inkStrength: .62,
-      bands: 11,
-      flatten: .3,
-      grain: .035,
-      saturation: 1.14,
-    })
+    this.pass = new IllustratedRenderPass(this.renderer, { ...STAGE_GRADE })
     this.dissolve = new InkDissolve()
 
     const ratio = this.renderer.getPixelRatio()
@@ -161,6 +165,7 @@ export class DeckStage {
       height: this.height,
       reduced: options.reduced,
       pointer: { x: 0, y: 0 },
+      frameTime: performance.now(),
     }
 
     window.addEventListener('resize', this.handleResize)
@@ -168,6 +173,7 @@ export class DeckStage {
     // A lost context is unrecoverable mid-talk, so it is at least reported
     // loudly rather than showing a frozen frame nobody can explain.
     this.canvas.addEventListener('webglcontextlost', this.handleContextLost)
+    this.hostSize.observe(this.canvas)
 
     // A function rather than an object, so a caller gets this frame's values
     // instead of a snapshot taken when the deck booted. Read-only by
@@ -322,9 +328,21 @@ export class DeckStage {
     next.setParams?.(params ?? {})
     next.setFraming(framing, true)
     this.active = { id, scene: next }
+    this.applyGrade()
     this.sceneElapsed = 0
     this.touch(id)
     this.blend = wants ? { elapsed: 0, duration: DISSOLVE_SECONDS } : null
+  }
+
+  /**
+   * Stop drawing without loading the unused `none` backdrop (library / skyline).
+   * The canvas is hidden by the deck; this parks the renderer so a leftover
+   * 3D frame cannot flash under the next slide.
+   */
+  clear() {
+    this.token += 1
+    this.blend = null
+    this.active = null
   }
 
   /** Aim the ink wash. Set per slide-pair so consecutive washes differ. */
@@ -383,6 +401,7 @@ export class DeckStage {
     this.disposed = true
     this.stop()
     registerProbe('__deckStage', undefined)
+    this.hostSize.disconnect()
     window.removeEventListener('resize', this.handleResize)
     window.removeEventListener('pointermove', this.handlePointer)
     this.canvas.removeEventListener('webglcontextlost', this.handleContextLost)
@@ -400,7 +419,9 @@ export class DeckStage {
   // ---------------------------------------------------------------- internals
 
   private measure() {
-    return { width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight) }
+    const width = Math.max(1, Math.round(this.canvas.clientWidth || window.innerWidth))
+    const height = Math.max(1, Math.round(this.canvas.clientHeight || window.innerHeight))
+    return { width, height }
   }
 
   private handleResize = () => {
@@ -436,6 +457,10 @@ export class DeckStage {
     this.renderer.setRenderTarget(target)
     this.pass.render(this.active.scene.scene, this.active.scene.camera)
     this.renderer.setRenderTarget(null)
+  }
+
+  private applyGrade() {
+    this.pass.configure(this.active?.scene.grade ?? STAGE_GRADE)
   }
 
   private remember(id: string, scene: DeckScene) {
@@ -486,6 +511,7 @@ export class DeckStage {
     const delta = Math.min(.05, Math.max(0, (now - this.previousTime) / 1000))
     this.previousTime = now
     this.sceneElapsed += delta
+    this.context.frameTime = now
 
     // Accounted before anything can return early, so the telemetry hatch still
     // reports honest frame pacing on a slide where this renderer is idle

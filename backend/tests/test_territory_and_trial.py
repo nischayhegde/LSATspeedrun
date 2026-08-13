@@ -258,6 +258,7 @@ def test_sweeping_a_region_pays_a_bonus_and_the_total_is_capped(app):
     state = territory_state(profile)
     city = next(region for region in state["regions"] if region["key"] == "city")
     assert city["swept"] and city["held"] == city["total"]
+    assert city["tier_range"] == [0, 4]
     assert state["standing"] > sum(DISTRICT_BY_KEY[key]["standing"] for key in city_keys)
 
     every = {item["key"] for item in DISTRICTS}

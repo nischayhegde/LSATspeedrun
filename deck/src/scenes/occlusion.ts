@@ -10,10 +10,10 @@
  *
  * The office and the city map are lifted out of the product with their own
  * `WebGLRenderer` each, and they mount on a layer *above* the stage canvas,
- * filling it. Measured on an M1 at 1920×1080, `concept-lawyer-tycoon` — the
- * tier-6 office, 363 draw calls and 272,000 triangles of its own — ran at 20fps
- * with both renderers going and at 60 with only the one the audience can see.
- * Two full-screen post passes for one visible frame is the entire difference.
+ * filling it. Measured on an M1 at 1920×1080, a live office slot — 363 draw
+ * calls and 272,000 triangles of its own — ran at 20fps with both renderers
+ * going and at 60 with only the one the audience can see. Two full-screen
+ * post passes for one visible frame is the entire difference.
  *
  * ## 2. The slide paints a field
  *

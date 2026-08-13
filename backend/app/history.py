@@ -124,18 +124,30 @@ def _clamp(value, default: int, maximum: int, minimum: int = 1, *, parameter: st
     return max(minimum, min(maximum, number))
 
 
-def session_history(user: User, *, limit: int = 20, offset: int = 0) -> dict:
+SESSION_HISTORY_MODES = ("practice", "diagnostic")
+
+
+def session_history(user: User, *, limit: int = 20, offset: int = 0, mode: str | None = None) -> dict:
     """Past runs, newest first, with the per-run counts already aggregated.
 
     The counts come from one grouped query over the page's session ids rather
     than from walking `session.items` — a 77-question mega-litigation would
     otherwise load 77 items and 77 attempts just to print "58/77".
+
+    `mode` narrows the feed to practice or diagnostic. The mega-litigation home
+    needs that: a mixed page of fifty practice runs can hide the only sitting.
     """
     limit = _clamp(limit, 20, MAX_SESSION_PAGE_SIZE, parameter="limit")
     offset = _clamp(offset, 0, MAX_OFFSET, minimum=0, parameter="offset")
+    modes: tuple[str, ...] = SESSION_HISTORY_MODES
+    if not _absent(mode):
+        asked = str(mode).strip()
+        if asked not in SESSION_HISTORY_MODES:
+            raise InvalidHistoryParameter("mode", mode, "practice or diagnostic")
+        modes = (asked,)
     base = StudySession.query.filter(
         StudySession.user_id == user.id,
-        StudySession.mode.in_(["practice", "diagnostic"]),
+        StudySession.mode.in_(modes),
     )
     total = base.with_entities(func.count(StudySession.id)).scalar() or 0
     rows = (

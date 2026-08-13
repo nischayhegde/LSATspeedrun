@@ -65,7 +65,7 @@
      vignette on top. Simulated film is the loudest way a screen can say
      "this is meant to look expensive", and the room reads it as the
      opposite. A field is a field. */
-  background: linear-gradient(176deg, #0e1f31 0%, #0a1725 58%, #081320 100%);
+  background: linear-gradient(176deg, var(--navy) 0%, var(--pixel-night) 58%, var(--pixel-shadow) 100%);
 }
 
 /* The plate holds focus so the dialog owns the keyboard, but it is not a
@@ -186,7 +186,7 @@
   border-radius: calc(.45 * var(--u));
   padding: calc(1.35 * var(--u)) calc(3 * var(--u));
   background: var(--gold-soft);
-  color: #0c1c2c;
+  color: var(--navy);
   font-family: var(--font-ui);
   font-size: calc(1.32 * var(--u));
   font-weight: 700;
@@ -196,7 +196,7 @@
   transition: background var(--mo-1) var(--ease-out);
 }
 
-.start-go:hover { background: #fff6e2; }
+.start-go:hover { background: var(--surface); }
 
 .start-go:focus-visible {
   outline: 2px solid var(--pixel-gold);
@@ -272,7 +272,7 @@
   border-radius: calc(.4 * var(--u));
   object-fit: cover;
   object-position: center;
-  background: #0a1420;
+  background: var(--pixel-night);
 }
 
 .start-founder span {

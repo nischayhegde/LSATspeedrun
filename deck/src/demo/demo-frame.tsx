@@ -69,7 +69,7 @@ import { describeSurface, presenterChrome, registerSlot, runtimeVersion, subscri
  *
  * The app's session cookies are `SameSite=Lax`, so a framed app page stays signed
  * in only when the framing document is on the same site — and site is host, not
- * origin, so `localhost:5180` framing `localhost:5173` works and `127.0.0.1:5180`
+ * origin, so `localhost:5180` framing `localhost:5174` works and `127.0.0.1:5180`
  * framing it does not. The runbook says to open the deck as `localhost:5180`, and
  * the preflight on the start card now checks it rather than trusting it.
  */
@@ -140,7 +140,7 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
   useSyncExternalStore(subscribeRuntime, runtimeVersion)
   const slot = useRef<HTMLDivElement | null>(null)
 
-  const { showStill, caption, still } = describeSurface(demo, stills)
+  const { showStill, caption, still, toggled } = describeSurface(demo, stills)
 
   /**
    * Published under this slide's own `DemoSpec`, and only while this layer is the
@@ -175,7 +175,17 @@ export function DemoFrame({ demo, stills, active, bleed }: Props) {
             still is painted here rather than there so that it transitions with
             the slide it belongs to. */}
         <div className="demo-screen" ref={slot}>
-          {showStill ? (
+          {demo.stillOnly && demo.toggle ? (
+            <div className="demo-office-wipe" data-toggled={toggled ? 'true' : 'false'}>
+              <img className="demo-still demo-office-before" src={`/stills/${demo.still}`} alt="The founding office" />
+              <img className="demo-still demo-office-after" src={`/stills/${demo.toggle.still}`} alt="The fully built firm" />
+              <span className="demo-office-state before">01 · FOUNDING OFFICE</span>
+              <span className="demo-office-state after">02 · BUILT WITH CASES</span>
+              <div className="demo-office-loop" aria-hidden="true">
+                <span>LSAT reps</span><i /><span>case fees</span><i /><span>upgrades + staff</span><i /><strong>the room transforms</strong>
+              </div>
+            </div>
+          ) : showStill ? (
             // `still` off the surface, not `demo.still`: a toggled slide has two,
             // and the fallback has to follow the toggle or the before/after
             // collapses to "before" twice over — which is the state this slide

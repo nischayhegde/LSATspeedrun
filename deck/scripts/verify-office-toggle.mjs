@@ -3,7 +3,7 @@
  * Proves `demo-office-transformation` can actually perform its own script.
  *
  *     cd backend && PORT=5001 DEV_AUTH_ENABLED=true ../.venv/bin/python run.py
- *     cd frontend && npm run dev                          # 5173
+ *     cd frontend && npm run dev                          # 5174
  *     cd deck && npm run dev                              # 5180
  *     cd deck && node scripts/verify-office-toggle.mjs
  *
@@ -53,6 +53,7 @@ import { cpus, loadavg } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -64,7 +65,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
 }))
 
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/office-toggle')
 /**
@@ -276,8 +277,6 @@ await page.waitForSelector('.demo-stage-frame', { timeout: 25000 }).catch(() => 
   fail('no hoisted demo frame appeared on demo-office-transformation')
 })
 await waitForRoute(/^\/office/, 25000)
-await page.waitForTimeout(SETTLE)
-
 const before = await instrument()
 if (!before) fail('could not instrument the embed')
 const beforeRoute = embedUrl().replace(APP, '')
@@ -292,19 +291,16 @@ if (/\/login/.test(beforeRoute)) {
 }
 await page.screenshot({ path: resolve(OUT, '1-live-tier0.png') })
 
-console.log(`\n\u2022 live \u2014 ${KEY} toggles to the built firm`)
+console.log('\n\u2022 live \u2014 the slide automatically builds the firm')
 /** Sampled across the toggle, so it describes the navigation being counted. */
 let loadDuringToggle = loadPerCore()
-await press(TOGGLE_KEY)
 const took = await waitForRoute(/officeTier=14\b/, 25000)
 loadDuringToggle = Math.max(loadDuringToggle, loadPerCore())
 if (took == null) {
-  fail(`${KEY} did not move the embed to the tier-14 office. The slide cannot perform its own script, which is `
-    + 'the defect `demo.toggle` exists to fix. Check that no other listener is swallowing the key — `T` was bound '
-    + 'in the capture phase by start/use-start-gate.ts and won silently — and that the handler in demo-stage.tsx '
-    + 'is bound.')
+  fail('the slide did not automatically move the embed to the tier-14 office. The before/after is the '
+    + 'demonstration, so it cannot depend on the presenter pressing a hidden control.')
 } else {
-  ok(`${KEY} moved the embed to the tier-14 office in ${took.toFixed(1)}s`)
+  ok(`the slide moved itself to the tier-14 office in ${took.toFixed(1)}s`)
   const route = embedUrl().replace(APP, '')
   if (!/officeAll=1\b/.test(route)) {
     fail(`the toggled route is ${route}, with no officeAll=1. Without it the scene renders the tier's shell but `
@@ -335,12 +331,14 @@ if (before && after) {
     ok(`the same iframe element survived the toggle (stamp ${after.stamp})`)
   }
   const loads = after.loads - before.loads
-  if (loads > 1 && loadDuringToggle > SATURATED) {
+  if (loads > 2 && loadDuringToggle > SATURATED) {
     notes.push(`note: the embed loaded ${loads} times for one toggle, which should be exactly one navigation — but `
       + `the machine was at ${loadDuringToggle.toFixed(1)} per core, and a saturated dev server has produced this `
       + 'exact count before on a build that then counted one. Re-run on a quiet machine before believing it.')
-  } else if (loads > 1) {
-    fail(`the embed loaded ${loads} times for one toggle; a tier swap is exactly one navigation`)
+  } else if (loads > 2) {
+    fail(`the embed loaded ${loads} times across its initial load and one toggle; at most two are expected`)
+  } else if (loads === 2) {
+    ok('the initial office load and one automatic tier navigation completed on the surviving iframe')
   } else if (loads === 1) {
     ok('one navigation of the surviving element, as the tier override requires')
   } else {
@@ -378,7 +376,7 @@ if (back == null) {
 // ---------------------------------------------------------------------------
 // leaving the slide resets it, so a second run-through is not played backwards
 // ---------------------------------------------------------------------------
-console.log('\n\u2022 leaving and returning resets to the before')
+console.log('\n\u2022 leaving and returning replays the automatic transformation')
 await press(TOGGLE_KEY)
 if (await waitForRoute(/officeTier=14\b/, 25000) == null) {
   notes.push('note: could not re-toggle to tier 14, so the reset-on-leave check below did not run meaningfully')
@@ -393,11 +391,13 @@ if (returned.hash !== 'demo-office-transformation') {
   notes.push(`note: expected to be back on demo-office-transformation but the deck is on "${returned.hash}", `
     + 'so the reset check did not run')
 } else if (!/officeTier=0\b/.test(returnedRoute)) {
-  fail(`returning to the slide left it on ${returnedRoute} rather than the tier-0 office. The toggle would then `
-    + 'play the money shot backwards — built firm to shack — on a second run-through, with nothing on screen '
-    + 'admitting it. The direction of travel is the argument.')
+  if (/officeTier=14\b/.test(returnedRoute)) {
+    ok('returning to the slide reset and replayed the automatic tier-0 → tier-14 transformation')
+  } else {
+    fail(`returning to the slide landed on an unexpected route (${returnedRoute})`)
+  }
 } else {
-  ok('returning to the slide puts it back on the tier-0 office')
+  ok('returning to the slide puts it back on tier 0 before the automatic replay')
 }
 
 // ---------------------------------------------------------------------------
@@ -420,15 +420,14 @@ if (stillBefore.still !== '/stills/demo-office-tier0.webp') {
 }
 await page.screenshot({ path: resolve(OUT, '3-stills-tier0.png') })
 
-await press(TOGGLE_KEY)
 await page.waitForTimeout(1200)
 const stillAfter = await readSlide()
 if (stillAfter.still !== '/stills/demo-office-tier14.webp') {
-  fail(`${KEY} did not swap the still: still showing ${stillAfter.still} rather than /stills/demo-office-tier14.webp. `
+  fail(`the automatic transformation did not swap the still: still showing ${stillAfter.still} rather than /stills/demo-office-tier14.webp. `
     + 'This is the half that matters most — the before/after is the whole slide, so it has to survive the stack '
     + 'being dead, and `demo-office-tier14.webp` is otherwise referenced by nothing.')
 } else {
-  ok(`${KEY} swaps the still to demo-office-tier14.webp with no app running`)
+  ok('the slide automatically swaps to demo-office-tier14.webp with no app running')
 }
 if (stillAfter.present) fail('the toggle mounted a live embed on the stills path')
 if (stillAfter.caption && /officeTier|officeAll/.test(stillAfter.caption)) {

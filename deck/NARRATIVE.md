@@ -20,7 +20,7 @@ The reframe also retires the deck's softest inference for free. LSAC's video-min
 
 **Revision 3** — rebuilt against the complete 68-page brainlift (23 articles, 8 DOK 3s, 8 DOK 4s) and reconciled against the fact-check in `deck/CITATIONS.md`.
 
-**Deck:** 24 slides · **Runtime:** 4:50 · **Spoken script:** 715 words · **Live demo budget:** 1:22 across six slides (a seventh is a still; the case demo is automated)
+**Deck:** 25 slides · **Runtime:** 5:00 · **Spoken script:** 742 words · **Live demo budget:** 1:22 across six slides (a seventh is a still; the case demo is automated)
 **Speakers:** Nischay Hegde (framing, problem, close) · Alan Abraham (product, demos)
 **Pacing assumption:** 150 spoken words per minute, measured rather than assumed — every slide's seconds figure is the actual word count of its spoken script divided by pace, and no slide exceeds 170. The `⟢ IF CHALLENGED` blocks in the notes are **off the clock**: they are answers to hold, not lines to say, and none of them is counted above.
 **Theme:** royal blue and beige. Tokens for the builder — `--blue: #1B2F6B`, `--blue-lit: #2A4BB8`, `--beige: #EFE6D6`, `--beige-dim: #D8CBB4`, `--ink: #0E1524`, `--stamp: #A8321F` (verdict red, used exactly twice in the deck).
@@ -54,7 +54,7 @@ Every item below is either a correction already applied to this file or a caveat
 
 **7. "Watching videos and learning concepts is ineffective" is too strong.** Wightman found coaching-course users scored +0.22 points over nonusers, from a self-reported, non-randomized survey. That shows instruction barely moves the aggregate. It does not prove instruction is useless, and a hostile questioner will say so. The deck now says instruction "can't be the core," matching DOK 4 #6.
 
-**8. "14 strategies" needs one word of care.** The catalog holds 14 methods, but `comparative_matrix` is currently unreachable because the dataset never marks comparative passages. Say "fourteen in the catalog, thirteen currently in rotation" if anyone presses, and never claim all fourteen are being trialed.
+**8. "14 strategies" is a catalog claim, not a learner-exposure claim.** `backend/app/strategies.py` currently defines 14 methods, and all 14 have a reachable assignment path now that comparative Passage A / Passage B sets are detected and persisted at ingest. Which methods one learner sees still depends on the questions served and the experiment's coverage state, so say **"fourteen approaches in the catalog"**, not that every learner has tried all fourteen.
 
 **9. The old `pov-no-menu` slide is gone as a slide.** Taking question-type choice away is the one POV with no brainlift source, and it sits in tension with Ryan & Deci. The argument survives, reframed as *structure rather than control*, inside the concept slide and the close, with Focus Mode as the autonomy valve. See §D.
 
@@ -318,7 +318,7 @@ Under a hairline rule, the ledger: two rows, *practice minutes* with a run that 
 
 **Speaker notes (Nischay, 51 words).** Everyone knows practice matters. This is LSAC's own data, matched to real scores. Top decile of practice time sat four point three points above the bottom. Even their video minutes weren't correlated at all. And fifty-one percent never completed a single practice exam. Everyone sells the method. Nobody sells the reps.
 
-*The longest spoken beat in the talk, and deliberately so: at a 4:50 runtime everything else is compressed toward ten seconds and this holds twenty-one, because it is the only place the causal chain — method, volume, compliance, mechanism — is argued rather than referred back to. The word doing the most work is **even**, which turns the video null from proof into corroboration. Three prepared answers, in the order they get asked — the baseline objection, the video dose, and causation — are in the `⟢ IF CHALLENGED` block.*
+*The longest spoken beat in the talk, and deliberately so: at a 5:00 runtime everything else is compressed toward ten seconds and this holds twenty-one, because it is the only place the causal chain — method, volume, compliance, mechanism — is argued rather than referred back to. The word doing the most work is **even**, which turns the video null from proof into corroboration. Three prepared answers, in the order they get asked — the baseline objection, the video dose, and causation — are in the `⟢ IF CHALLENGED` block.*
 
 **Say it in the past tense.** LSAC's Khan Academy programme is retired — it ended June 2024 and the material moved to LawHub. "LSAC studied their own free platform" is correct; "Khan Academy offers free LSAT prep" is not, and anyone who has looked in two years knows it. See `CITATIONS.md` §4.8.
 

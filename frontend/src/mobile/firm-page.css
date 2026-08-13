@@ -5,7 +5,7 @@
 @media (max-width: 640px) {
   .firm-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .firm-tabs button { min-width: 0; font-size: 8.5px; }
-  .catalog-toolbar label select { font-family: var(--font-ui); font-size: 16px; }
+  .catalog-toolbar label select { font-family: var(--font-body); font-size: 16px; }
   .catalog-view-buttons button { min-width: 44px; }
   .client-grid {
     display: flex;

@@ -19,10 +19,9 @@ import type { SceneFactory } from './types'
 const FACTORIES: Partial<Record<SceneId, () => Promise<SceneFactory>>> = {
   none: async () => (await import('./backdrop-scene')).createBackdropScene,
   hero: async () => (await import('./hero-scene')).createHeroScene,
-  cast: async () => (await import('./cast-scene')).createCastScene,
   'close-room': async () => (await import('./close-room-scene')).createCloseRoomScene,
-  tiers: async () => (await import('./tiers-scene')).createTiersScene,
-  metrics: async () => (await import('./metrics-scene')).createMetricsScene,
+  'counsel-stage': async () => (await import('./counsel-stage-scene')).createCounselStageScene,
+  burnout: async () => (await import('./burnout-scene')).createBurnoutScene,
 }
 
 /**

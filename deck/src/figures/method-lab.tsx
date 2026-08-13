@@ -94,16 +94,6 @@ export function MethodLab({ spec, active, reduced }: FigureBody<MethodLabFigure>
 
   return (
     <div className="fig-ml">
-      {/* ── the moment of need ───────────────────────────────────────────
-          The card does not appear out of nowhere; it appears *on a
-          question*. One line of the app's own trigger list, above the card
-          and in the pixel face the app uses for its own metadata, is the
-          whole of what "at the moment you need it" needs. */}
-      <p className="fig-ml-trigger" style={{ opacity: phase >= 1 ? 1 : 0 }}>
-        <span className="fig-ml-chip">1 of {spec.catalogSize} approaches</span>
-        {handed.trigger}
-      </p>
-
       {/* ── the card, as the app hands it ────────────────────────────── */}
       <div className="fig-ml-tip" data-taken={taken ? 'true' : 'false'} style={{ opacity: phase >= 2 ? 1 : 0 }}>
         <p className="fig-ml-tip-head">Partner tip</p>

@@ -37,56 +37,81 @@ import { usePhase, vars, type FigureBody } from './kit'
  *
  * ## The choreography, which is the argument
  *
- * The first column arrives row by row, top to bottom, at reading speed — the
- * room is being walked down a list, and the list is boring on purpose. Then the
- * second column lands all five at once, in one beat, because the whole point of
- * it is that there is nothing to read: it is one phrase, five times, and
- * staggering it would invite the eye to read each cell instead of seeing the
- * shape. Then the rule, then our row, which is the only line on the slide whose
- * second cell is a different sentence.
+ * One sequence, three beats. The competitor chips stagger in at reading
+ * speed — five names, one field. Then a stem draws down from that row into
+ * the letter they all grade, so the chips own the phrase rather than sitting
+ * above it. Then our lockup arrives as a single unit: the product name, a
+ * gold rule that draws into the claim, and "your reasoning". Name and claim
+ * are one idea, not two leftover labels.
  *
- * Down, then across, then one line. Anything else and the reader finds the
+ * Field, then letter, then us. Anything else and the reader finds the
  * punchline before the setup.
  */
 
-/** Cumulative milliseconds: heads, the field, the repeat, the rule, us. */
-const MARKS = [40, 300, 1180, 1460, 1720] as const
+/** Cumulative milliseconds: the field, the letter they grade, our lockup. */
+const MARKS = [40, 860, 1380] as const
 
-/** Between the competitor rows. Reading speed, not animation speed. */
-const ROW_STAGGER_MS = 130
+/** Between the competitor chips. Reading speed, not animation speed. */
+const ROW_STAGGER_MS = 90
 
 export function MarketLedger({ spec, active, reduced }: FigureBody<MarketLedgerFigure>) {
   const phase = usePhase(active, reduced, MARKS)
   const { rows, ours } = spec
+  const fieldIn = phase >= 1
+  const letterIn = phase >= 2
+  const oursIn = phase >= 3
 
   return (
     <div className="fig-mk">
-      <p className="fig-mk-head" data-col="claim" style={{ opacity: phase >= 1 ? 1 : 0 }}>{spec.claimHead}</p>
-      <p className="fig-mk-head" data-col="grades" style={{ opacity: phase >= 1 ? 1 : 0 }}>{spec.gradesHead}</p>
-
-      {rows.map((row, index) => (
-        <div
-          className="fig-mk-row"
-          key={row.name}
-          style={vars({ opacity: phase >= 2 ? 1 : 0, '--fig-delay': `${index * ROW_STAGGER_MS}ms` })}
-        >
-          <p className="fig-mk-name">{row.name}</p>
-          <p className="fig-mk-claim">{row.claim}</p>
-          {/* Not staggered with its row. The second column is one fact repeated
-              and it has to land as a block, or the eye reads five cells instead
-              of seeing that they are the same cell. */}
-          <p className="fig-mk-grades" style={{ opacity: phase >= 3 ? 1 : 0 }}>{row.grades}</p>
+      <section className="fig-mk-choice">
+        <div className="fig-mk-field">
+          <div className="fig-mk-vendors">
+            {rows.map((row, index) => (
+              <span
+                key={row.name}
+                style={vars({
+                  opacity: fieldIn ? 1 : 0,
+                  transform: fieldIn ? 'translateY(0)' : 'translateY(.4em)',
+                  '--fig-delay': `${index * ROW_STAGGER_MS}ms`,
+                })}
+              >
+                {row.name}
+              </span>
+            ))}
+          </div>
+          <span
+            className="fig-mk-funnel"
+            style={{ transform: `scaleY(${letterIn ? 1 : 0})` }}
+            aria-hidden="true"
+          />
         </div>
-      ))}
+        <strong
+          className="fig-mk-result"
+          style={{
+            opacity: letterIn ? 1 : 0,
+            transform: letterIn ? 'translateY(0)' : 'translateY(.45em)',
+          }}
+        >
+          the letter you picked
+        </strong>
+      </section>
 
-      {/* The rule is the slide's only horizontal, and it draws left to right
-          rather than fading, so the row under it reads as arriving after the
-          field rather than as having been there all along. */}
-      <span className="fig-mk-rule" style={{ transform: `scaleX(${phase >= 4 ? 1 : 0})` }} />
-
-      <div className="fig-mk-row" data-ours="true" style={{ opacity: phase >= 5 ? 1 : 0 }}>
+      <div
+        className="fig-mk-ours"
+        style={{
+          opacity: oursIn ? 1 : 0,
+          transform: oursIn ? 'translateY(0)' : 'translateY(.45em)',
+        }}
+      >
         <p className="fig-mk-name">{ours.name}</p>
-        <p className="fig-mk-claim">{ours.claim}</p>
+        <span
+          className="fig-mk-bind"
+          style={vars({
+            transform: oursIn ? 'scaleX(1)' : 'scaleX(0)',
+            '--fig-delay': '140ms',
+          })}
+          aria-hidden="true"
+        />
         <p className="fig-mk-grades">{ours.grades}</p>
       </div>
     </div>

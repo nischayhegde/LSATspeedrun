@@ -2,6 +2,53 @@ import { demoConfig } from '../../demo.config'
 import type { DemoSpec } from '../slides/types'
 import type { AppHealth } from './health'
 
+type DemoSessionOverlay = {
+  liveSessionId: string
+  verdictSessionId: string
+  soloSessionId: string
+  soloAnswerKey: string
+  autoplaySessionId: string
+  autoplayAnswerKey: string
+  demoEmail: string
+}
+
+const sessionOverlay: DemoSessionOverlay = {
+  liveSessionId: demoConfig.liveSessionId,
+  verdictSessionId: demoConfig.verdictSessionId,
+  soloSessionId: demoConfig.soloSessionId,
+  soloAnswerKey: demoConfig.soloAnswerKey,
+  autoplaySessionId: demoConfig.autoplaySessionId,
+  autoplayAnswerKey: demoConfig.autoplayAnswerKey,
+  demoEmail: demoConfig.demoEmail,
+}
+
+export function getDemoSessions(): DemoSessionOverlay {
+  return sessionOverlay
+}
+
+/**
+ * Production staging writes `/pitch/demo-sessions.json` after it creates the
+ * live sessions. The committed pins in `demo.config.ts` are local rehearsal
+ * ids and will 404 against RDS, so the deck prefers this overlay when present.
+ */
+export async function loadDeployedDemoSessions(): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    const response = await fetch('/pitch/demo-sessions.json', { cache: 'no-store', credentials: 'same-origin' })
+    if (!response.ok) return
+    const data = await response.json() as Partial<DemoSessionOverlay>
+    if (typeof data.liveSessionId === 'string' && data.liveSessionId) sessionOverlay.liveSessionId = data.liveSessionId
+    if (typeof data.verdictSessionId === 'string' && data.verdictSessionId) sessionOverlay.verdictSessionId = data.verdictSessionId
+    if (typeof data.soloSessionId === 'string' && data.soloSessionId) sessionOverlay.soloSessionId = data.soloSessionId
+    if (typeof data.soloAnswerKey === 'string' && data.soloAnswerKey) sessionOverlay.soloAnswerKey = data.soloAnswerKey
+    if (typeof data.autoplaySessionId === 'string' && data.autoplaySessionId) sessionOverlay.autoplaySessionId = data.autoplaySessionId
+    if (typeof data.autoplayAnswerKey === 'string' && data.autoplayAnswerKey) sessionOverlay.autoplayAnswerKey = data.autoplayAnswerKey
+    if (typeof data.demoEmail === 'string' && data.demoEmail) sessionOverlay.demoEmail = data.demoEmail
+  } catch {
+    // A missing overlay is the local-rehearsal case. Keep the committed pins.
+  }
+}
+
 /**
  * The bus between the demo frame's chrome, which lives inside a slide, and the
  * live embed, which no longer does.
@@ -65,6 +112,11 @@ export type DemoStatus = {
   /** The session id the case route is actually using, pinned or resolved. */
   sessionId: string
   /**
+   * The one-question autoplay case. May differ from the pin in `demo.config.ts`
+   * when that id 404s and preflight finds a live replacement.
+   */
+  soloSessionId: string
+  /**
    * Bumped when the deck signs this browser profile in during preflight.
    *
    * The stage watches it because of a race it would otherwise lose: on a cold
@@ -82,6 +134,7 @@ const INITIAL: DemoStatus = {
   showStill: false,
   label: 'connecting',
   sessionId: '',
+  soloSessionId: '',
   authEpoch: 0,
 }
 
@@ -94,6 +147,7 @@ export function setStatus(next: Partial<DemoStatus>): void {
     && merged.showStill === status.showStill
     && merged.label === status.label
     && merged.sessionId === status.sessionId
+    && merged.soloSessionId === status.soloSessionId
     && merged.authEpoch === status.authEpoch
   ) return
   status = merged
@@ -242,16 +296,18 @@ export const presenterChrome = typeof window !== 'undefined'
  * empty session id would show the room an error page.
  */
 export function resolveRoute(route: string, sessionId: string): string {
+  const solo = getStatus().soloSessionId || sessionOverlay.soloSessionId
   return route
     .replace('{session}', sessionId)
-    .replace('{verdictSession}', demoConfig.verdictSessionId)
-    .replace('{autoplayRun}', drivenRoute(demoConfig.autoplaySessionId, demoConfig.autoplayAnswerKey, sessionId))
-    .replace('{autoplay}', drivenRoute(demoConfig.soloSessionId, demoConfig.soloAnswerKey, sessionId))
+    .replace('{verdictSession}', sessionOverlay.verdictSessionId)
+    .replace('{autoplayRun}', drivenRoute(sessionOverlay.autoplaySessionId, sessionOverlay.autoplayAnswerKey, sessionId))
+    .replace('{autoplay}', drivenRoute(solo, sessionOverlay.soloAnswerKey, sessionId))
 }
 
 function drivenRoute(driven: string, answers: string, fallback: string): string {
   if (!driven || !answers) return `/cases/${fallback}`
-  return `/cases/${driven}?autoplay=${encodeURIComponent(answers)}`
+  const pitch = answers.length === 1 ? '&autoplayScene=pitch' : ''
+  return `/cases/${driven}?autoplay=${encodeURIComponent(answers)}${pitch}`
 }
 
 /** What a demo slide is actually going to show, right now. */
@@ -267,7 +323,7 @@ export type DemoSurface = {
    * is not cosmetic on one slide.
    *
    * `route` is a real URL against a dev server and it was printed verbatim, so
-   * the audience read `localhost:5173` on all six demo slides — and, on the
+   * the audience read `localhost:5174` on all six demo slides — and, on the
    * centrepiece, `?autoplay=C`: the credited answer to the question they were
    * about to watch the app reason its way to, on screen for the whole beat,
    * above the app pretending not to know it. Query strings are dropped whole

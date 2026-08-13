@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 
 import { describeSurface, runtimeVersion, subscribeRuntime } from '../demo/demo-runtime'
 import { SECTION_LABELS, TOTAL_BUDGET_SECONDS } from '../slides'
+import { spokenNotes } from '../slides/spoken-notes'
 import type { SlideSpec } from '../slides/types'
 
 /**
@@ -72,7 +73,7 @@ export function Presenter({ slides, index, elapsed, frameMs, memory, stills, onC
 
       <section className="presenter-notes">
         <h3>{slide.headline}</h3>
-        <p>{slide.notes ?? 'No notes for this slide.'}</p>
+        <p>{spokenNotes(slide.notes)}</p>
         <dl>
           <dt>this slide</dt>
           <dd>{slide.budgetSeconds ?? 45}s · {slide.kind} · {slide.transition ?? 'cut'}</dd>

@@ -668,7 +668,7 @@ Resources:
               # timing out after twenty minutes. Swap costs disk rather than a
               # change to the pinned instance size.
               if [ ! -f /swapfile ]; then
-                fallocate -l 2G /swapfile
+                fallocate -l 4G /swapfile
                 chmod 600 /swapfile
                 mkswap /swapfile
                 swapon /swapfile
@@ -682,7 +682,7 @@ Resources:
               git init
               git remote add origin ${GitRepository}
               git config core.sparseCheckout true
-              printf 'backend/\nfrontend/\n' > .git/info/sparse-checkout
+              printf 'backend/\nfrontend/\ndeck/\n' > .git/info/sparse-checkout
               git fetch --depth 1 origin ${GitCommit}
               git checkout --detach FETCH_HEAD
 
@@ -699,6 +699,12 @@ Resources:
               NODE_OPTIONS=--max-old-space-size=1536 VITE_API_URL=/v1 npm run build
               install -d /var/www/lsat-speedrun
               cp -a dist/. /var/www/lsat-speedrun/
+
+              cd /opt/lsat-speedrun/deck
+              DECK_BASE=/pitch/ npm ci
+              NODE_OPTIONS=--max-old-space-size=1536 DECK_BASE=/pitch/ npm run build
+              install -d /var/www/lsat-speedrun/pitch
+              cp -a dist/. /var/www/lsat-speedrun/pitch/
 
               install -m 600 /dev/null /etc/lsat-speedrun.env
               printf 'SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> /etc/lsat-speedrun.env
@@ -761,8 +767,22 @@ Resources:
                   root /var/www/lsat-speedrun;
                   index index.html;
 
+                  gzip on;
+                  gzip_comp_level 5;
+                  gzip_min_length 256;
+                  gzip_types text/plain text/css text/javascript application/javascript application/json application/xml image/svg+xml;
+
                   location /v1/ {
                       proxy_pass http://127.0.0.1:8000;
+                      proxy_http_version 1.1;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+
+                  location /demo-api/ {
+                      proxy_pass http://127.0.0.1:8000/;
                       proxy_http_version 1.1;
                       proxy_set_header Host $host;
                       proxy_set_header X-Real-IP $remote_addr;
@@ -773,6 +793,15 @@ Resources:
                   location /assets/ {
                       try_files $uri =404;
                       add_header Cache-Control "public, max-age=31536000, immutable";
+                  }
+
+                  location /pitch/assets/ {
+                      try_files $uri =404;
+                      add_header Cache-Control "public, max-age=31536000, immutable";
+                  }
+
+                  location /pitch/ {
+                      try_files $uri $uri/ /pitch/index.html;
                   }
 
                   location / {
@@ -858,6 +887,29 @@ Resources:
           Compress: true
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
           OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+        OrderedCacheBehaviors:
+          - PathPattern: /assets/*
+            TargetOriginId: app-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          - PathPattern: /pitch/assets/*
+            TargetOriginId: app-origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         ViewerCertificate:
           CloudFrontDefaultCertificate: true
       Tags:

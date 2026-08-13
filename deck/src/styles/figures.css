@@ -74,6 +74,10 @@
   justify-content: center;
   color: var(--on-field);
   font-family: var(--font-ui);
+  /* Fit-scale is applied about the stage centre. Default is already 50% 50%,
+     pinned so a later rule cannot send a shrink toward a corner and look
+     like a jump. */
+  transform-origin: 50% 50%;
 
   /* THE `em` BASE, AND WHY IT IS DECLARED.
      Most of the geometry in this file is in `em` — a card's padding, the
@@ -154,24 +158,17 @@
 }
 
 .fig-bp-scale {
-  /* The gutter is derived from the numeral, not guessed. `+2.77` is five
-     glyphs of a display face, which is a little over three ems of its own
-     size — set it in absolute terms and the numerals overflow the moment
-     the stage changes size. */
-  --fig-bp-numeral: var(--fig-num);
-  /* The bar is the slide. It was 32px tall on a 1080p stage — a hairline
-     under a headline six times its height — which is most of why this
-     slide read as an empty frame with a rule in it. */
-  --fig-bp-height: calc(3.4 * var(--u));
-  /* 3.2 ems of the numeral was measured against flat type. The extruded object
-     carries its own depth off the right of the last glyph and its faces are
-     set at a heavier weight, so the gutter buys a little more room — without
-     it the `+` of `+2.77` sits on the end of the bar it is labelling. */
-  width: calc(100% - var(--fig-bp-numeral) * 4.1);
+  --fig-bp-value-size: calc(4 * var(--u));
+  --fig-bp-height: calc(2.5 * var(--u));
+  /* `+2.77` is always outside the bar. Reserve its measured display width in
+     the composition instead of trusting overflow beyond the stage clip. */
+  --fig-bp-value-gutter: calc(var(--fig-bp-value-size) * 3.8);
+  width: calc(100% - var(--fig-bp-value-gutter));
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  justify-content: center;
+  gap: calc(1.15 * var(--u));
 }
 
 /* Left, against the start of the bar it names. The slide body centres its
@@ -181,18 +178,28 @@
    and belongs on the chart's baseline. */
 .fig-bp-name {
   text-align: left;
-  margin: 0 0 .4em;
-  font-size: var(--fig-label);
+  margin: 0 0 .36em;
+  font-size: var(--fig-strong);
   line-height: 1.2;
-  color: var(--on-field-dim);
+  color: var(--on-field);
 }
 
 .fig-bp-row {
   position: relative;
-  /* Reserved for the share tag, which hangs below the track. Paying for it in
-     layout rather than letting it overflow keeps the figure inside the box the
-     slide gave it, whatever the slide put underneath. */
-  padding-bottom: 3.6em;
+  padding-bottom: 2.2em;
+}
+
+.fig-bp-name,
+.fig-bp-track {
+  transition:
+    opacity 360ms var(--ease-out),
+    transform 460ms var(--ease-out);
+}
+
+.fig-bp-row[data-visible='false'] .fig-bp-name,
+.fig-bp-row[data-visible='false'] .fig-bp-track {
+  opacity: 0;
+  transform: translateY(.18em);
 }
 
 .fig-bp-track {
@@ -204,45 +211,28 @@
   position: absolute;
   inset: 0 auto 0 0;
   background: currentColor;
-  /* The slow draw. The stub overrides it below and stops almost at once,
-     which is the pair of durations the narrative asks for. */
-  transition: width 1500ms var(--ease-out) 200ms;
+  transform-origin: left center;
+  will-change: transform;
+  transition: transform 640ms var(--ease-out);
 }
 
 .fig-bp-row[data-stub='true'] .fig-bp-run {
-  transition: width 260ms var(--ease-out);
+  transition-duration: 620ms;
 }
 
 .fig-bp-value {
   position: absolute;
   top: 50%;
-  /* Explicit, because the shrink-to-fit width of an absolutely positioned box
-     pinned at `left: 100%` resolves to zero — there is no room to its right in
-     its containing block — and the numeral then rendered centred on that zero
-     box, half of it back over the end of the bar it labels. */
   width: max-content;
-  /* Clear of the bar tip. The tall bar reaches the full plotting width, so
-     this margin is the only thing between the end of a solid rule and the
-     `+` of the numeral that labels it — at .62em the two touched. */
-  margin-left: .82em;
-  font-size: var(--fig-bp-numeral);
-  line-height: 1;
+  font-family: var(--font-display);
+  font-size: var(--fig-bp-value-size);
+  font-weight: 650;
+  line-height: .9;
+  letter-spacing: -.025em;
   white-space: nowrap;
-  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
-}
-
-/* A shallower step than the hero's. The extrusion is proportional to the
-   glyph, so at this size the default depth would be two pixels and would read
-   as a printing misregistration rather than as a solid; a slightly deeper one
-   keeps the object legible as the same object without turning a chart label
-   into a sculpture. */
-.fig-bp-value .num3d {
-  --num-step: .014em;
-  font-size: 1em;
-}
-
-.fig-bp-value .num3d-face {
-  font-size: 1em;
+  transition:
+    opacity 360ms var(--ease-out),
+    transform 460ms var(--ease-out);
 }
 
 .fig-bp-share {
@@ -253,41 +243,16 @@
   align-items: baseline;
   gap: .5em;
   white-space: nowrap;
-  /* The travel is deliberately slower than the fade and eased hard out of the
-     start: the tags have to be *seen leaving*, because the swap is the
-     argument. A crossfade at these two positions would read as two tags
-     appearing rather than as one pair changing its mind. */
   transition:
-    opacity var(--mo-3) var(--ease-out),
-    transform 520ms var(--ease-spring);
-}
-
-/* The tick. A short rule struck through the numeral at the instant the tags
-   trade, on the tag that has just taken the *larger* share onto the *smaller*
-   bar — which is the one fact the slide exists to deliver. */
-.fig-bp-share[data-swapped='true'] b::after {
-  content: '';
-  position: absolute;
-  left: -.25em;
-  right: -.25em;
-  top: 50%;
-  border-top: 2px solid currentColor;
-  transform: scaleX(1);
-  transform-origin: left center;
-  animation: fig-bp-tick 420ms var(--ease-out) both;
-}
-
-@keyframes fig-bp-tick {
-  0% { transform: scaleX(0); opacity: 1; }
-  45% { transform: scaleX(1); opacity: 1; }
-  100% { transform: scaleX(1); opacity: 0; }
+    opacity 320ms var(--ease-out),
+    transform 420ms var(--ease-out);
 }
 
 .fig-bp-share b {
   position: relative;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: var(--fig-num-sm);
+  font-size: calc(2.35 * var(--u));
   line-height: 1;
 }
 
@@ -298,7 +263,7 @@
 
 .fig-bp-gapstrip {
   position: relative;
-  height: var(--s-6);
+  height: calc(2.2 * var(--u));
 }
 
 .fig-bp-gap {
@@ -308,7 +273,7 @@
   display: flex;
   align-items: center;
   gap: .6em;
-  transition: opacity var(--mo-4) var(--ease-out);
+  transition: opacity 420ms var(--ease-out);
 }
 
 /* Two segments with the note between them, rather than one rule with the
@@ -317,13 +282,13 @@
 .fig-bp-gap-rule {
   flex: 1;
   height: 0;
-  border-top: 1px dashed currentColor;
-  opacity: .55;
+  border-top: 1px solid currentColor;
+  opacity: .38;
 }
 
 .fig-bp-gap-note {
   font-family: var(--font-pixel);
-  font-size: var(--fig-micro);
+  font-size: var(--fig-note);
   letter-spacing: .03em;
   color: var(--on-field-dim);
   white-space: nowrap;
@@ -371,7 +336,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   overflow: hidden;
-  transition: width 1200ms var(--ease-out);
+  transition: width 720ms var(--ease-out);
 }
 
 .fig-hb-wash,
@@ -724,12 +689,12 @@
 }
 
 .fig-rt-node[data-arrived='true'] .fig-rt-dot {
-  animation: fig-rt-pop 460ms var(--ease-spring) both;
+  animation: fig-rt-pop 420ms var(--ease-out) both;
 }
 
 @keyframes fig-rt-pop {
-  from { transform: scale(.3); }
-  to { transform: scale(1); }
+  from { transform: scale(.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 /* The ring slide 5's transition out grows into slide 6's question card. */
@@ -1103,134 +1068,136 @@
 /* ================================================================
    market-ledger — the field, in its own words
    ================================================================
-   New with the slide, and the one figure in this folder that is mostly
-   type. That is deliberate. Every cell in the first column is a
-   competitor's own marketing copy and the whole persuasive weight of
-   the slide is that the room can check it, so the drawing's job is to
-   get out of the way and let six lines be read.
-
-   Which is also why there is no grid: no cell borders, no zebra rows,
-   no ticks and no crosses. A ruled table reads as a scorecard, a
-   scorecard reads as a claim about who is better, and a claim about who
-   is better is the thing `NARRATIVE.md` §D was right to be afraid of.
-   Three columns held by a grid template and separated by space alone,
-   with exactly one rule on the slide — the one above our row. */
+   Two ownerships, not a scorecard. The competitor chips are the field;
+   a stem under that row drops into the letter they all grade, so the
+   names own the phrase rather than floating above it. Our row is one
+   lockup — product name, a gold rule, the claim — because "Lawyer
+   Tycoon" and "your reasoning" are one idea. No ticks, no crosses, no
+   grid: a ruled table reads as a claim about who is better, and that
+   is the thing `NARRATIVE.md` §D was right to be afraid of. */
 
 .fig-mk {
-  /* The ledger's own step, and everything below is `em` against it, so
-     the whole table grows or shrinks from one number. It is set above
-     `--fig-label` because this figure is nothing but type and had a
-     third of the stage spare at both projector sizes; a table with room
-     to be bigger and set small is a table nobody reads from row four
-     back. `useFitScale` still owns the ceiling. */
-  --mk: calc(1.72 * var(--u));
+  --mk: calc(1.5 * var(--u));
   font-size: var(--mk);
-
-  width: 100%;
+  width: min(100%, calc(74 * var(--u)));
   display: grid;
-  /* All three columns shrink to their own content and the block centres,
-     rather than the quotes taking every spare pixel and pushing the last
-     column against the right margin. The eye has to cross from a quote
-     to its verdict five times; the width of that crossing is the cost of
-     the slide. */
-  grid-template-columns: auto auto auto;
+  grid-template-columns: 1fr;
+  gap: var(--s-6);
+  align-content: center;
+  text-align: center;
+}
+
+.fig-mk-choice {
+  display: grid;
+  justify-items: center;
+  gap: 0;
+}
+
+.fig-mk-field {
+  display: grid;
+  justify-items: stretch;
+  width: max-content;
+  max-width: 100%;
+}
+
+.fig-mk-vendors {
+  display: flex;
   justify-content: center;
-  column-gap: 2.6em;
-  align-items: baseline;
-  text-align: left;
+  flex-wrap: wrap;
+  gap: var(--s-2);
 }
 
-.fig-mk-head {
-  grid-row: 1;
-  margin: 0 0 .55em;
-  padding-bottom: .4em;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  font-family: var(--font-pixel);
-  font-size: .64em;
-  letter-spacing: .14em;
-  text-transform: uppercase;
+.fig-mk-vendors span {
+  padding: .52em .82em;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
   color: var(--on-field-dim);
-  transition: opacity var(--mo-2) var(--ease-out);
+  transition:
+    opacity var(--mo-2) var(--ease-out) var(--fig-delay),
+    transform var(--mo-2) var(--ease-out) var(--fig-delay);
 }
 
-/* The first head spans the name and quote columns, so the ledger reads
-   as two questions asked of six products rather than three unrelated
-   lists. The names need no head — they are obviously names. */
-.fig-mk-head[data-col='claim'] { grid-column: 1 / 3; }
-.fig-mk-head[data-col='grades'] { grid-column: 3; }
+/* T under the chips, then a stem into the letter — the five names
+   produce the one phrase. Origin at the top so it draws downward. */
+.fig-mk-funnel {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 1.35em;
+  margin-top: .15em;
+  border-top: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+  transform-origin: center top;
+  transition: transform 420ms var(--ease-out);
+}
 
-/* A row is a grid item that is itself a subgrid, so all six rows share
-   one set of column edges. Without it each row measures its own name
-   and the second column ragged-edges down the slide, which on a figure
-   whose entire point is that one column repeats is the worst possible
-   place to lose an alignment. */
-.fig-mk-row {
-  grid-column: 1 / -1;
+.fig-mk-funnel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: color-mix(in srgb, currentColor 32%, transparent);
+}
+
+.fig-mk-result {
+  margin-top: .2em;
+  font-family: var(--font-display);
+  font-size: calc(3.5 * var(--u));
+  line-height: 1;
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    transform var(--mo-3) var(--ease-out);
+}
+
+/* One lockup: the product is the label, the gold rule is the verb,
+   the claim is the object. Accent is this act's gold. */
+.fig-mk-ours {
   display: grid;
-  grid-template-columns: subgrid;
-  align-items: baseline;
-  padding: .4em 0;
-  transition: opacity var(--mo-2) var(--ease-out) var(--fig-delay);
+  grid-template-columns: auto minmax(2.4em, 5.2em) auto;
+  justify-self: center;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  column-gap: var(--s-3);
+  padding-block: .55em;
+  border-block: 2px solid var(--accent);
+  color: var(--accent);
+  transition:
+    opacity var(--mo-3) var(--ease-out),
+    transform var(--mo-3) var(--ease-out);
 }
 
-.fig-mk-name {
+.fig-mk-ours .fig-mk-name {
   margin: 0;
-  line-height: 1.25;
-  white-space: nowrap;
-  color: var(--on-field-dim);
-}
-
-.fig-mk-claim {
-  margin: 0;
-  line-height: 1.25;
-  color: var(--on-field);
-}
-
-/* The column that repeats. Set in the pixel face rather than the body
-   face, which is what makes five identical phrases read as five
-   identical *values* — the same trick a table of figures uses — instead
-   of as five sentences that happen to match. */
-.fig-mk-grades {
-  margin: 0;
+  padding: .48em .78em;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   font-family: var(--font-pixel);
-  font-size: .78em;
-  line-height: 1.3;
-  white-space: nowrap;
-  color: var(--on-field-dim);
-  transition: opacity var(--mo-2) var(--ease-out);
-}
-
-/* The only rule on the slide, and it draws rather than fades. */
-.fig-mk-rule {
-  grid-column: 1 / -1;
-  height: 0;
-  margin: .55em 0 .5em;
-  border-top: 1px solid color-mix(in srgb, currentColor 45%, transparent);
-  transform-origin: left center;
-  transition: transform 480ms var(--ease-out);
-}
-
-/* Our row, at the weight the difference deserves and no more. The name
-   comes up to full colour and the second cell takes the display face —
-   those two changes are the entire visual claim, and anything louder
-   (a fill, a box, a colour) would turn a ledger back into a
-   scorecard. */
-.fig-mk-row[data-ours='true'] .fig-mk-name {
-  color: var(--on-field);
+  font-size: 1em;
   font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.fig-mk-row[data-ours='true'] .fig-mk-claim {
-  color: var(--on-field);
+.fig-mk-bind {
+  display: block;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 480ms var(--ease-out) var(--fig-delay);
 }
 
-.fig-mk-row[data-ours='true'] .fig-mk-grades {
+.fig-mk-ours .fig-mk-grades {
+  margin: 0;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1.16em;
+  font-size: calc(3.5 * var(--u));
   letter-spacing: -.01em;
+  line-height: 1;
   text-transform: none;
-  color: var(--on-field);
+  color: var(--accent);
+  white-space: nowrap;
 }
 
 /* ================================================================
@@ -1350,44 +1317,41 @@
   place-items: center;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .fig-num .num3d {
   /* Deliberately enormous. This is the only object on the slide and the
      narrative wants it to be the only thing in frame with weight. */
   font-size: calc(24 * var(--u));
-  will-change: transform, opacity;
+  will-change: opacity;
 }
 
 .fig-num .num3d-face {
   font-size: 1em;
 }
 
-/* The entrance is a dolly, not a zoom.
-   `--num-dolly` pushes the rig back along its own Z inside the perspective it
-   already has, so the numeral arrives from *behind* the beige — smaller, with
-   its extrusion foreshortened and its faces converging — and comes forward
-   onto the picture plane. A `scale()` would have changed its size without
-   changing any of that, which is the difference between an object approaching
-   and a picture of an object being enlarged. The narrative asks for the second
-   slide's numeral "dollied in", so it is dollied. */
+/* The extrusion is a still object. The entrance is a rise, not a Z-dolly:
+   pushing the rig along perspective-Z read as a 3D insert rather than as
+   type arriving on a slide. */
 .fig-num .num3d {
-  --num-dolly: -7.4em;
+  --num-dolly: 0em;
   opacity: 0;
+  transform: translateY(.35em);
   transition:
     opacity 620ms var(--ease-out),
-    --num-dolly 1180ms var(--ease-out);
+    transform 620ms var(--ease-out);
 }
 
 .fig-num[data-in='true'] .num3d {
-  --num-dolly: 0em;
   opacity: 1;
+  transform: none;
 }
 
 .fig-num[data-reduced='true'] .num3d {
   transition: none;
-  --num-dolly: 0em;
   opacity: 1;
+  transform: none;
 }
 
 /* `--num-dolly` is only interpolable because it is registered; without this
@@ -1486,8 +1450,8 @@
   font-size: var(--fig-num);
   line-height: 1;
   transition:
-    opacity var(--mo-3) var(--ease-spring),
-    transform var(--mo-3) var(--ease-spring);
+    opacity var(--mo-3) var(--ease-out),
+    transform var(--mo-3) var(--ease-out);
 }
 
 .fig-ct-category {
@@ -1512,7 +1476,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .fig-tr-baseline {
@@ -1614,6 +1578,104 @@
   line-height: 1.25;
   color: var(--on-field-dim);
   transition: opacity var(--mo-4) var(--ease-out);
+}
+
+/* The audience needs the reversal, not a miniature plot. The two measured
+   outcomes now read as a before/after pair, with the guardrail as the resolution
+   beneath them. */
+.fig-tr {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding-top: .4em;
+  /* Pinned layer so a live canvas under the incoming sheet cannot shake
+     these cards. Identity, never rewritten after the one-shot below. */
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+.fig-tr > .fig-tr-baseline-label {
+  position: static;
+  width: auto;
+  padding: 0;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.fig-tr-outcomes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+
+.fig-tr-baseline-label,
+.fig-tr-outcome,
+.fig-tr-guardrail {
+  opacity: 0;
+  transform: translate3d(0, .35em, 0);
+  transition: none;
+}
+
+.fig-tr-baseline-label[data-in='true'],
+.fig-tr-outcome[data-in='true'],
+.fig-tr-guardrail[data-in='true'] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  animation: fig-tr-in 420ms var(--ease-out);
+}
+
+@keyframes fig-tr-in {
+  from { opacity: 0; transform: translate3d(0, .35em, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.fig-tr-outcome {
+  min-height: calc(10 * var(--u));
+  padding: var(--s-3);
+  display: grid;
+  align-content: center;
+  gap: var(--s-3);
+  border-block: 2px solid currentColor;
+  text-align: left;
+}
+
+.fig-tr-outcome strong {
+  font-family: var(--font-display);
+  font-size: calc(4.4 * var(--u));
+  line-height: .9;
+}
+
+.fig-tr-outcome span {
+  font-size: var(--fig-strong);
+  line-height: 1.1;
+}
+
+.fig-tr-outcome[data-style='good'] { color: var(--on-field-dim); }
+.fig-tr-outcome[data-style='bad'] { color: var(--on-field); }
+
+.fig-tr-guardrail {
+  padding: var(--s-3) 0;
+  display: grid;
+  grid-template-columns: calc(10 * var(--u)) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.fig-tr-guardrail i {
+  height: 0;
+  border-top: 3px solid currentColor;
+}
+
+.fig-tr-guardrail span {
+  font-family: var(--font-display);
+  font-size: var(--fig-lead);
+  font-weight: 600;
+  line-height: 1.05;
+  text-align: left;
 }
 
 /* ================================================================
@@ -2298,6 +2360,14 @@
   color: var(--on-field-dim);
 }
 
+.fig-si-index small {
+  max-width: 12em;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  line-height: 1.25;
+  color: var(--on-field-dim);
+}
+
 /* ================================================================
    spokes — points against badges
    ================================================================ */
@@ -2348,7 +2418,7 @@
   stroke-width: 2;
   transform-box: fill-box;
   transform-origin: center;
-  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-spring);
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
 }
 
 .fig-sp-shape[data-emphasis='true'] {
@@ -2497,13 +2567,7 @@
 }
 
 .fig-pb-bar[data-pulse='true'] {
-  animation: fig-pb-pulse 700ms var(--ease-out) 1 both;
-}
-
-@keyframes fig-pb-pulse {
-  0% { transform: scaleX(1); }
-  42% { transform: scaleX(1.24); }
-  100% { transform: scaleX(1); }
+  opacity: 1;
 }
 
 .fig-pb-value {
@@ -2783,6 +2847,74 @@
   color: var(--on-field-dim);
 }
 
+.fig-gt-gallery {
+  position: relative;
+  width: min(100%, calc(82 * var(--u)));
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, .8fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--s-3);
+}
+
+.fig-gt-office,
+.fig-gt-map {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  box-shadow: 0 var(--s-2) var(--s-5) rgba(2, 7, 18, .28);
+  transition: opacity var(--mo-4) var(--ease-out), transform var(--mo-4) var(--ease-out);
+}
+
+.fig-gt-office img,
+.fig-gt-map img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.fig-gt-office span,
+.fig-gt-map span {
+  position: absolute;
+  left: var(--s-3);
+  bottom: var(--s-3);
+  padding: .5em .75em;
+  background: rgba(5, 12, 25, .86);
+  color: var(--beige);
+  font-family: var(--font-display);
+  font-size: var(--fig-label);
+  font-weight: 600;
+}
+
+.fig-gt-access {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-block: 2px solid var(--accent);
+  color: var(--accent);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+.fig-gt-access small {
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  letter-spacing: .12em;
+}
+
+.fig-gt-access b {
+  font-family: var(--font-display);
+  font-size: var(--fig-lead);
+}
+
+.fig-gt-access span {
+  font-size: var(--fig-label);
+}
+
 /* ================================================================
    REDUCED MOTION
    ================================================================
@@ -2806,4 +2938,341 @@
    and is lit by the blink, so with no blink it has to be lit here. */
 .fig[data-reduced='true'] .fig-rc-caret[data-live='true'] {
   opacity: 1;
+}
+
+/* ================================================================
+   DECISIVE READABILITY PASS
+   One payoff per figure; labels stay above the projected floor.
+   ================================================================ */
+
+.fig {
+  --fig-micro: calc(1.16 * var(--u));
+  --fig-note: calc(1.3 * var(--u));
+  --fig-label: calc(1.55 * var(--u));
+  --fig-strong: calc(1.9 * var(--u));
+}
+
+/* Recommended time against the recurring bill: one comparison, two endpoints. */
+.fig-hb-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--s-5);
+  width: 100%;
+}
+.fig-hb-metric {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--s-2);
+  padding-block: var(--s-4);
+  border-block: 2px solid currentColor;
+  transition: opacity var(--mo-3) var(--ease-out), transform var(--mo-3) var(--ease-out);
+}
+.fig-hb-metric b {
+  font-family: var(--font-display);
+  font-size: calc(7 * var(--u));
+  line-height: .9;
+  letter-spacing: -.04em;
+}
+.fig-hb-metric span {
+  font-size: var(--fig-lead);
+  font-weight: 600;
+}
+.fig-hb-metric small {
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  color: var(--on-field-dim);
+}
+.fig-hb-versus {
+  align-self: center;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  font-style: normal;
+  color: var(--on-field-dim);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+
+/* Conventional delay and the six-second first question are the only decode. */
+.fig-rt-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(8 * var(--u)) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-4);
+}
+.fig-rt-endpoint {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-5) var(--s-4);
+  border-block: 2px solid currentColor;
+  text-align: left;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+.fig-rt-endpoint small {
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+.fig-rt-endpoint b {
+  font-family: var(--font-display);
+  font-size: calc(4.6 * var(--u));
+  line-height: .95;
+}
+.fig-rt-endpoint span { font-size: var(--fig-strong); color: var(--on-field-dim); }
+.fig-rt-endpoint.is-now span { color: var(--on-field); font-family: var(--font-pixel); }
+.fig-rt-divider {
+  height: 0;
+  border-top: 2px solid currentColor;
+  transform-origin: left center;
+  transition: transform var(--mo-4) var(--ease-out);
+}
+
+/* One explanation excerpt, then answer-level versus reasoning-level feedback. */
+.fig-rc { gap: var(--s-5); }
+.fig-rc-card { flex: 1.3; padding: var(--s-4); gap: var(--s-3); }
+.fig-rc-stem {
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.fig-rc-box,
+.fig-rc-box[data-focused='true'] {
+  flex: 1 1 auto;
+  padding: var(--s-4);
+}
+.fig-rc-written { font-size: var(--fig-strong); line-height: 1.45; }
+.fig-rc-coach-clause { font-size: var(--fig-label); }
+.fig-rc-effects { gap: var(--s-5); }
+.fig-rc-effect-head { display: grid; gap: var(--s-2); }
+.fig-rc-effect-head b { font-size: calc(5 * var(--u)); }
+.fig-rc-effect-head span { font-size: var(--fig-label); color: var(--on-field); }
+.fig-rc-effect-track { height: var(--s-3); }
+
+.fig-ct-category {
+  font-size: var(--fig-label);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+/* The descriptive completion and practice findings carry the slide. */
+.fig-cs-input:first-child .fig-cs-verdict b { font-size: calc(3.5 * var(--u)); }
+.fig-cs-input:first-child .fig-cs-input-name { font-size: var(--fig-strong); }
+.fig-cs-input[data-emphasis='false'] { opacity: .58 !important; }
+.fig-cs-input[data-emphasis='false'] .fig-cs-verdict b { font-size: var(--fig-strong); }
+.fig-cs-lost { font-size: var(--fig-strong); }
+
+/* Exact field-study endpoints, with the guarded arm kept as the caveat. */
+.fig-tr-mark[data-style='good'] .fig-tr-tag,
+.fig-tr-mark[data-style='bad'] .fig-tr-tag {
+  max-width: 35%;
+  font-family: var(--font-display);
+  font-size: var(--fig-num-sm);
+  font-weight: 600;
+  line-height: 1.05;
+}
+.fig-tr-mark[data-style='guarded'] .fig-tr-tag { font-size: var(--fig-label); }
+.fig-tr-mark[data-style='good'] .fig-tr-tag { color: var(--on-field); }
+
+/* Strategy card plus its sole payoff: the student's two running counts. */
+.fig-ml {
+  grid-template-rows: 1fr;
+  grid-template-columns: 43fr 6fr 51fr;
+}
+.fig-ml-tip,
+.fig-ml-wire,
+.fig-ml-record { grid-row: 1; }
+.fig-ml-arm-count { font-size: calc(5.2 * var(--u)); min-width: 3.2em; }
+.fig-ml-record-head { font-size: var(--fig-note); }
+.fig-ml-arm-name { font-size: var(--fig-label); }
+
+/* Keep the clock face; remove the card-like frame around its readout. */
+.fig-cr-card,
+.fig-cr-card[data-settled='true'] { box-shadow: none; }
+.fig-cr-frame-ring,
+.fig-cr-outer-label { display: none; }
+.fig-cr { max-width: calc(30 * var(--u)); }
+.fig-cr-core { height: 100%; max-width: none; }
+
+/* Four readable dashboard pillars feed one index. */
+.fig-si-pillars {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(10 * var(--u)) calc(16 * var(--u));
+  align-items: center;
+  gap: var(--s-4);
+}
+.fig-si-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3) var(--s-5);
+}
+.fig-si-pillar {
+  padding-left: var(--s-3);
+  border-left: 3px solid currentColor;
+  text-align: left;
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+.fig-si-pillar h4 {
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-display);
+  font-size: var(--fig-lead);
+  line-height: 1;
+}
+.fig-si-pillar ul {
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fig-si-pillar li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  font-size: var(--fig-note);
+  line-height: 1.2;
+}
+.fig-si-pillar li[data-highlight='true'] { font-weight: 700; }
+.fig-si-pillar em {
+  flex: none;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-micro);
+  font-style: normal;
+  color: var(--on-field-dim);
+}
+.fig-si-feed {
+  height: 0;
+  border-top: 2px solid currentColor;
+  transform-origin: left center;
+  transition: transform var(--mo-4) var(--ease-out);
+}
+.fig-si-pillars .fig-si-index {
+  position: static;
+  transform: none;
+  align-items: center;
+  text-align: center;
+}
+.fig-si-pillars .fig-si-index b { font-size: calc(7 * var(--u)); }
+.fig-si-pillars .fig-si-index span { font-size: var(--fig-label); }
+.fig-si-pillars .fig-si-index small { margin-top: var(--s-1); }
+
+/* Four paired-result tiles replace eight thin bars. */
+.fig-pb-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-3);
+  align-items: stretch;
+}
+.fig-pb-tile {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border-top: 3px solid currentColor;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  transition: opacity var(--mo-3) var(--ease-out) var(--fig-delay);
+}
+.fig-pb-tile > p {
+  margin: 0;
+  font-family: var(--font-pixel);
+  font-size: var(--fig-note);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--on-field-dim);
+}
+.fig-pb-result { display: grid; align-content: center; gap: var(--s-1); }
+.fig-pb-result b {
+  font-family: var(--font-display);
+  font-size: calc(4.6 * var(--u));
+  line-height: .9;
+}
+.fig-pb-result span { font-size: var(--fig-label); line-height: 1.15; }
+.fig-pb-result.is-alt {
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--on-field-dim);
+  color: var(--on-field-dim);
+}
+.fig-pb-result.is-alt b { font-size: var(--fig-lead); }
+
+/* Day-one practice lands before a compact sample of later game rewards. */
+.fig-gt {
+  width: min(100%, calc(58 * var(--u)));
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--s-4);
+}
+.fig-gt-openhero {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+  padding-block: var(--s-2);
+  border-block: 2px solid var(--accent);
+  text-align: center;
+  color: var(--accent);
+  transition: opacity var(--mo-3) var(--ease-out);
+}
+.fig-gt-openhero b {
+  font-family: var(--font-display);
+  font-size: calc(3.1 * var(--u));
+  line-height: 1;
+}
+.fig-gt-openhero span { font-size: var(--fig-strong); font-weight: 600; }
+.fig-gt-head {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+.fig-gt-quote { margin: 0 0 var(--s-1); }
+.fig-gt-row { padding-block: .34em; }
+
+/* The turn is a statement, not a bare decimal. */
+.fig-num .num3d { font-size: calc(13 * var(--u)); }
+
+/* `pov-graded-question` — gold foil seal. The stamp is a square on a
+   16:9 sheet, so the tight axis is height: size to that axis minus a
+   shared inset, centre it, and keep overflow visible so the outer
+   stroke is a ring rather than a clipped cap. The type lives in a
+   different layer; this box is only the stamp. */
+.fig-claim-seal {
+  overflow: visible;
+  color: var(--gold);
+}
+
+.fig-seal {
+  /* A little more inset so the inner opening can hold the two-line
+     claim with padding, rather than parking the deck sentence on the ring. */
+  --seal-inset: calc(var(--gutter) + var(--s-2));
+  flex: none;
+  box-sizing: border-box;
+  width: min(
+    calc(100% - 2 * var(--seal-inset)),
+    calc(56.25 * var(--u) - 2 * var(--seal-inset))
+  );
+  height: min(
+    calc(100% - 2 * var(--seal-inset)),
+    calc(56.25 * var(--u) - 2 * var(--seal-inset))
+  );
+  aspect-ratio: 1;
+  max-width: calc(100% - 2 * var(--seal-inset));
+  max-height: calc(100% - 2 * var(--seal-inset));
+  min-width: 0;
+  min-height: 0;
+}
+
+.fig-seal-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fig-seal-engine {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: .18;
+  opacity: .22;
 }

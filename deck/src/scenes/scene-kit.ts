@@ -3,11 +3,10 @@ import * as THREE from 'three'
 /**
  * Shared apparatus for the deck's own scenes.
  *
- * The four scenes built here — hero, cast, tier ladder, metric panel — are
- * deck-original rather than ported, but they have to sit in the same picture as
- * the two that are ported, so the palette below is the product's tokens as
- * numbers and the lighting rig is the one `rig-harness.html` uses. Nothing here
- * invents a colour.
+ * The two scenes built here — hero and close-room — are deck-original rather
+ * than ported, but they have to sit in the same picture as the two that are
+ * ported, so the palette below is the product's tokens as numbers and the
+ * lighting rig is the one `rig-harness.html` uses. Nothing here invents a colour.
  */
 
 /** `frontend/src/styles.css`, both token blocks, as hex numbers. */
@@ -108,12 +107,15 @@ export class CameraRig {
     this.livePosition.copy(this.toPosition)
     this.liveTarget.copy(this.toTarget)
     this.camera.fov = this.toFov
+    this.camera.position.copy(this.livePosition)
+    this.camera.lookAt(this.liveTarget)
     this.camera.updateProjectionMatrix()
   }
 
   /** Call once per frame, before rendering, with the stage pointer. */
   update(delta: number, pointer: { x: number; y: number }) {
-    if (this.progress < 1) {
+    const moving = this.progress < 1
+    if (moving) {
       this.progress = Math.min(1, this.progress + delta / this.duration)
       // The target leads the position: `sharp` is further along the curve than
       // `soft`, so the frame composes before the dolly finishes arriving.
@@ -125,6 +127,10 @@ export class CameraRig {
       this.camera.updateProjectionMatrix()
     }
     const sway = this.parallax
+    // A parked camera with no parallax must not be rewritten every frame.
+    // Rebuilding the lookAt matrix from the same numbers still jitters in the
+    // low bits, and that shake reads on any DOM type sharing the stage.
+    if (!moving && sway === 0) return
     this.camera.position.set(
       this.livePosition.x + pointer.x * .55 * sway,
       this.livePosition.y - pointer.y * .34 * sway,

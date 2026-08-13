@@ -1,4 +1,6 @@
 import type { TransitionKind } from '../slides/types'
+import { BURNOUT_REVEAL_FROM, BURNOUT_REVEAL_MID, BURNOUT_REVEAL_MS, BURNOUT_REVEAL_TO } from '../scenes/burnout-reveal'
+import { COUNSEL_PULL_FROM, COUNSEL_PULL_MID, COUNSEL_PULL_MS, COUNSEL_PULL_PARK, COUNSEL_PULL_TO, snapCounselSlide } from '../scenes/counsel-pull'
 
 /**
  * The transition system.
@@ -64,7 +66,6 @@ export const TRANSITION_MS: Record<TransitionKind, number> = {
   'ink-bleed': 900,
   letterbox: 1240,
   camera: 1100,
-  type: 900,
   'foil-seal': 1180,
 }
 
@@ -102,8 +103,8 @@ export const TRANSITION_MS: Record<TransitionKind, number> = {
  *     they alternate and their DOM order does not.
  *   - `foil-seal` is the same shape: the plate that the swap is supposed to
  *     happen behind reaches full at 44% of the move, and the incoming slide was
- *     arriving at 10%. It is the transition into the close, held for the whole
- *     of the Q&A.
+ *     arriving at 10%. It is the transition into `close-one-stop-shop`, held
+ *     for the whole of the Q&A.
  *
  * So the rule here is: the effect-level easing stays `linear` — `play` already
  * defaults it — and a curve goes on the keyframe that *starts* the interval it
@@ -230,10 +231,10 @@ class Batch {
    * take end to end, and `camera` is the transition between the demo slides.
    * A presenter walking out of the demos at any speed above deliberate is
    * therefore *routinely* landing stale timers on the slides after them — and
-   * the last of those is the close, which is entered on `foil-seal` and then
-   * held for the entire Q&A. That is the "incredibly glitchy" closing slide,
-   * and it is why holding it still measured clean: nothing is wrong inside
-   * `doorways-scene.ts`, the damage is done to it on arrival by a timer
+   * the last of those is `close-one-stop-shop`, which is entered on `foil-seal`
+   * and then held for the entire Q&A. That is the "incredibly glitchy" closing
+   * slide, and it is why holding it still measured clean: nothing is wrong
+   * inside `close-room-scene.ts`, the damage is done to it on arrival by a timer
    * belonging to a slide the room has already left.
    *
    * Finishing early runs the callback rather than dropping it, which is the
@@ -333,20 +334,17 @@ function overlayLayer(batch: Batch, overlay: HTMLElement, className: string) {
 // where both are opaque are frames where the lower one cannot be seen.
 // ---------------------------------------------------------------------------
 const cut: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
-  const shift = 34 * direction
+  const shift = 16 * direction
   if (from) {
     batch.play(from, [
-      { opacity: 1, transform: 'translate3d(0,0,0) scale(1)' },
-      { opacity: 1, transform: `translate3d(${-shift * .35}px,0,0) scale(.99)`, offset: .62, easing: 'cubic-bezier(.4,0,1,1)' },
-      { opacity: 0, transform: `translate3d(${-shift * .5}px,0,0) scale(.985)`, offset: .78 },
-      { opacity: 0, transform: `translate3d(${-shift * .5}px,0,0) scale(.985)` },
-    ], { duration: TRANSITION_MS.cut })
+      { opacity: 1, transform: 'translate3d(0,0,0)' },
+      { opacity: 0, transform: `translate3d(${-shift}px,0,0)` },
+    ], { duration: TRANSITION_MS.cut, easing: 'cubic-bezier(.22,1,.36,1)' })
   }
   batch.play(to, [
-    { opacity: 0, transform: `translate3d(${shift}px,0,0) scale(1.012)`, easing: 'cubic-bezier(.22,1,.36,1)' },
-    { opacity: 1, transform: `translate3d(${shift * .12}px,0,0) scale(1.002)`, offset: .6, easing: 'cubic-bezier(.22,1,.36,1)' },
-    { opacity: 1, transform: 'translate3d(0,0,0) scale(1)' },
-  ], { duration: TRANSITION_MS.cut })
+    { opacity: 0, transform: `translate3d(${shift}px,0,0)` },
+    { opacity: 1, transform: 'translate3d(0,0,0)' },
+  ], { duration: TRANSITION_MS.cut, easing: 'cubic-bezier(.22,1,.36,1)' })
   onMidpoint?.()
 }
 
@@ -478,119 +476,40 @@ const letterbox: Kernel = async ({ from, to, overlay, onMidpoint }, batch) => {
 // ---------------------------------------------------------------------------
 const camera: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
   const total = TRANSITION_MS.camera
-  // The dolly runs for the whole move; the opacity is held until the incoming
-  // field has arrived, so the two fields never sum to less than one. See `cut`.
+  // A short rise, not a 3D dolly. Perspective + translateZ on the slide, and
+  // scale on the ported WebGL canvases, read as an accidental cutaway of the
+  // office or map rather than as a slide change.
   if (from) {
     batch.play(from, [
-      { opacity: 1, transform: 'perspective(1400px) translate3d(0,0,0)', easing: 'cubic-bezier(.5,0,.9,.4)' },
-      { opacity: 1, transform: `perspective(1400px) translate3d(0,0,${140 * direction}px)`, offset: .66 },
-      { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${170 * direction}px)`, offset: .8 },
-      { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${170 * direction}px)` },
-    ], { duration: total })
+      { opacity: 1, transform: 'translate3d(0,0,0)' },
+      { opacity: 0, transform: `translate3d(0,${10 * direction}px,0)` },
+    ], { duration: total * .62, easing: 'ease-in' })
   }
   batch.play(to, [
-    { opacity: 0, transform: `perspective(1400px) translate3d(0,0,${-120 * direction}px)`, easing: 'cubic-bezier(.16,1,.3,1)' },
-    { opacity: 1, transform: `perspective(1400px) translate3d(0,0,${-14 * direction}px)`, offset: .58, easing: 'cubic-bezier(.16,1,.3,1)' },
-    { opacity: 1, transform: 'perspective(1400px) translate3d(0,0,0)' },
-  ], { duration: total, delay: total * .16 })
+    { opacity: 0, transform: `translate3d(0,${-12 * direction}px,0)` },
+    { opacity: 1, transform: 'translate3d(0,0,0)' },
+  ], { duration: total * .78, delay: total * .12, easing: 'ease-out' })
 
-  // The app-scene canvases, when there are two of them, get the same dolly. They
-  // live outside the slide layers, so they are addressed by role.
   const outgoing = document.querySelector<HTMLElement>('.deck-appscene[data-role="outgoing"]')
   const incoming = document.querySelector<HTMLElement>('.deck-appscene[data-role="current"]')
-  // Transient, not filled: these two elements outlive the transition and the
-  // scene layer needs its own inline transform back afterwards. See
-  // `Batch.playTransient`.
   if (outgoing) {
     batch.playTransient(outgoing, [
-      { opacity: 1, transform: 'scale(1)' },
-      { opacity: 0, transform: 'scale(1.34)' },
-    ], { duration: total * .78, easing: 'cubic-bezier(.4,0,.9,.5)' })
+      { opacity: 1 },
+      { opacity: 0 },
+    ], { duration: total * .62, easing: 'ease-in' })
   }
   if (incoming) {
     batch.playTransient(incoming, [
-      { opacity: outgoing ? 0 : 1, transform: 'scale(1.07)' },
-      { opacity: 1, transform: 'scale(1.03)', offset: .5 },
-      { opacity: 1, transform: 'scale(1)' },
-    ], { duration: total, easing: 'cubic-bezier(.16,1,.3,1)' })
-  }
-
-  batch.after(total * .8, () => onMidpoint?.())
-}
-
-// ---------------------------------------------------------------------------
-// 5 — TYPE. The headline's glyphs are transformed individually.
-//
-// `layouts.tsx` renders every headline as one `<span>` per glyph carrying its own
-// index, which is what makes this possible without a text-measuring pass. Each
-// glyph gets the same keyframes on a staggered delay.
-//
-// This used to also interpolate the display face's `wght` axis, so a headline
-// thickened as it landed. That went with Fraunces. Google serves Archivo as
-// four static instances rather than a variable font — the CSS is four
-// `@font-face` blocks at 500, 600, 700 and 800, with no axis to move — so a
-// `font-variation-settings` keyframe is silently inert, and animating
-// `font-weight` instead would snap through four faces in a fifth of a second
-// and read as a stutter. The rise and the X rotation were always the substance
-// of this transition; what is left is the part that was doing the work.
-// ---------------------------------------------------------------------------
-const type: Kernel = ({ from, to, direction, onMidpoint }, batch) => {
-  const total = TRANSITION_MS.type
-  const glyphs = Array.from(to.querySelectorAll<HTMLElement>('[data-glyph]'))
-  const outgoingGlyphs = from ? Array.from(from.querySelectorAll<HTMLElement>('[data-glyph]')) : []
-
-  if (from) {
-    batch.play(from, [
+      { opacity: outgoing ? 0 : 1 },
       { opacity: 1 },
-      { opacity: 1, offset: .62, easing: 'ease-in' },
-      { opacity: 0, offset: .84 },
-      { opacity: 0 },
-    ], { duration: total })
-    // Outgoing glyphs leave upward behind their own mask, in reverse order, so
-    // the two headlines never appear to swap places.
-    outgoingGlyphs.forEach((glyph, index) => {
-      batch.play(glyph, [
-        { transform: 'translate3d(0,0,0)', opacity: 1 },
-        { transform: `translate3d(0,${-.55 * direction}em,0)`, opacity: 0 },
-      ], {
-        duration: total * .42,
-        delay: (outgoingGlyphs.length - index) * 7,
-        easing: 'cubic-bezier(.5,0,.75,0)',
-      })
-    })
+    ], { duration: total * .78, delay: total * .12, easing: 'ease-out' })
   }
 
-  // The body of the incoming slide is a plain fade; only the headline is
-  // choreographed. A slide where every element is individually staggered is
-  // noise, and the headline is the only thing the audience is reading yet.
-  batch.play(to, [{ opacity: 0 }, { opacity: 1 }], {
-    duration: total * .3, delay: total * .18, easing: 'ease-out',
-  })
-
-  glyphs.forEach((glyph, index) => {
-    batch.play(glyph, [
-      {
-        transform: `translate3d(0,${.85 * direction}em,0) rotateX(${-42 * direction}deg)`,
-        opacity: 0,
-      },
-      {
-        transform: 'translate3d(0,0,0) rotateX(0deg)',
-        opacity: 1,
-      },
-    ], {
-      duration: total * .72,
-      // 16ms per glyph: fast enough that a nine-word headline finishes inside the
-      // transition, slow enough that the stagger is legible as a sweep.
-      delay: total * .16 + index * 16,
-      easing: 'cubic-bezier(.16,1,.3,1)',
-    })
-  })
-
-  onMidpoint?.()
+  batch.after(total * .55, () => onMidpoint?.())
 }
 
 // ---------------------------------------------------------------------------
-// 6 — FOIL SEAL. The scales-of-justice mark as an animated gold-foil mask.
+// FOIL SEAL. The scales-of-justice mark as an animated gold-foil mask.
 //
 // The mark grows from the centre of the screen as an actual scaled SVG of the
 // product's favicon path — so what the audience sees expanding is the logo, in
@@ -747,27 +666,22 @@ type MorphSpec = {
  */
 const MORPHS: readonly MorphSpec[] = [
   {
-    // 2 → 3. "The tall real-LSAT bar rotates flat and becomes the horizontal
-    // hours bar that slide 3 fills in." It tips forward through three quarters
-    // of a right angle on the way, which is what makes it read as a plank
-    // being laid down rather than a rectangle being resized.
+    // 2 → 3. The tall real-LSAT bar becomes the horizontal hours bar.
+    // A 2D box map, not a plank rotating in X — the 3D tip read as a
+    // flourish rather than as one measurement changing frame.
     id: 'bar-lays-flat',
     from: '.fig-bp-row[data-stub="false"] .fig-bp-run',
     to: '.fig-hb-fill',
     land: '.fig-hb-bar',
-    turn: { x: -74 },
     span: .82,
   },
   {
-    // 4 → 5. "The extruded `0.22` rotates edge-on until it is a single vertical
-    // line, and that line becomes the progress track of the speedrun timer."
-    // The turn and the box are doing the same work from two directions: by the
-    // time the numeral has gone edge-on it is already as narrow as the track it
-    // is about to be, so it arrives square without a visible snap.
+    // 4 → 5. The hero numeral becomes the timer track. Scale and position
+    // only — rotating the extrusion edge-on was the 3D-numeral move that
+    // read as a cutaway rather than as a slide change.
     id: 'numeral-goes-edge-on',
     from: '.fig-num [data-morph="numeral"]',
     to: '[data-morph="timer-track"]',
-    turn: { y: 86 },
     span: .9,
   },
   {
@@ -1029,59 +943,58 @@ const priceCurtain: Kernel = ({ from, to, onMidpoint }, batch) => {
 }
 
 /**
- * 17 → 18, and back. The field parts and the audience is in the ladder.
- *
- * `tiers-scene.ts` builds all fifteen firm tiers as one object climbing a
- * helix, and its own header calls the move between two of its framings "the
- * deck's demonstration of a continuous camera move… the transition *is* the
- * camera". It was not, and could not be: both slides that share the scene paint
- * an opaque field, so the stage flew sixty units up a helix behind a royal blue
- * rectangle, every time, for nobody. That is the whole of the founders' note
- * that the 3D is decorative — the deck's best camera move was running with the
- * lens cap on.
- *
- * So this kernel does the one thing the generic `camera` kernel cannot: it
- * takes the field *off* for the middle of the move. The outgoing slide pulls
- * back and clears, the room looks at the ladder itself with the camera climbing
- * it, and the incoming slide's field closes over the top. Nothing is added to
- * the frame to make this happen and no extra scene is built — the object was
- * always there and always moving, and all that changes is that the audience can
- * now see it.
- *
- * Longer than any other transition in the deck at 1.7s, and deliberately: a
- * quick one would read as a flash of something going wrong behind the slides,
- * which is exactly the note this is answering. The window is nine tenths of a
- * second of held 3D, and `tiers-scene.ts` sets its camera tween to 1.25s
- * against it, so the audience joins the climb at speed and the camera arrives
- * at its framing as the incoming field closes over the top of it.
+ * 10 → 11. The counsel reaches and hauls the *real* next slide (the DOM
+ * layer of `COUNSEL_PULL_TO`). The scene writes translateX each frame
+ * so the left edge stays on his hand. This kernel must not animate
+ * `transform` on `to` — a WAAPI fill would win over those writes.
  */
-const TIER_FLY_MS = 1700
+const counselWalkPull: Kernel = ({ from, to, onMidpoint }, batch) => {
+  const total = COUNSEL_PULL_MS
 
-const tierFly: Kernel = ({ from, to, onMidpoint }, batch) => {
-  const total = TIER_FLY_MS
-
+  // Slide 10's copy holds until he has hold of the sheet. It used to clear at
+  // 38%, which left two and a half seconds of empty navy with a man walking
+  // across it and nothing to read — the walk is long because it is a walk, and
+  // the words are what the audience does during it.
   if (from) {
-    // Away from the audience rather than towards them: the flat plate recedes
-    // and leaves the world it was printed over, which is the read that makes
-    // the ladder feel like it was behind the slide all along.
     batch.play(from, [
-      { opacity: 1, transform: 'perspective(1600px) translate3d(0,0,0)', easing: 'cubic-bezier(.45,0,.75,.5)' },
-      { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-190px)', offset: .33 },
-      { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-190px)' },
+      { opacity: 1, transform: 'translate3d(0,0,0)' },
+      { opacity: 1, transform: 'translate3d(0,0,0)', offset: .46 },
+      { opacity: 0, transform: 'translate3d(0,0,0)', offset: .6 },
+      { opacity: 0, transform: 'translate3d(0,0,0)' },
     ], { duration: total })
   }
 
-  batch.play(to, [
-    { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-150px)' },
-    { opacity: 0, transform: 'perspective(1600px) translate3d(0,0,-150px)', offset: .86, easing: 'cubic-bezier(.33,0,.2,1)' },
-    { opacity: 1, transform: 'perspective(1600px) translate3d(0,0,0)' },
-  ], { duration: total })
+  to.style.transform = `translate3d(${COUNSEL_PULL_PARK}%,0,0)`
+  to.style.opacity = '1'
+  batch.play(to, [{ opacity: 1 }, { opacity: 1 }], { duration: total })
 
-  // At the point the field is off. Nothing mounted is being released here —
-  // neither of these slides holds an app scene — but the contract is that the
-  // midpoint is the moment the outgoing slide stops being on screen, and for
-  // this kernel that is when it finishes clearing.
-  batch.after(total * .33, () => onMidpoint?.())
+  const settle = () => snapCounselSlide(to)
+  batch.after(total * COUNSEL_PULL_MID, () => {
+    settle()
+    onMidpoint?.()
+  })
+  batch.onCleanup(settle)
+}
+
+/**
+ * 10 → 11. Opacity only, ease-out. Papers, fire and type leave; the navy
+ * room holds; counsel-stage items ease in. Same cyclorama.
+ */
+const burnoutReveal: Kernel = ({ from, to, onMidpoint }, batch) => {
+  const total = BURNOUT_REVEAL_MS
+  const ease = 'cubic-bezier(.22, 1, .36, 1)'
+  if (from) {
+    batch.play(from, [
+      { opacity: 1 },
+      { opacity: 0 },
+    ], { duration: total * BURNOUT_REVEAL_MID, easing: ease })
+  }
+  batch.play(to, [
+    { opacity: 0 },
+    { opacity: 0, offset: BURNOUT_REVEAL_MID },
+    { opacity: 1 },
+  ], { duration: total, easing: ease })
+  batch.after(total * BURNOUT_REVEAL_MID, () => onMidpoint?.())
 }
 
 const OVERRIDES: readonly Override[] = [
@@ -1096,17 +1009,22 @@ const OVERRIDES: readonly Override[] = [
     kernel: priceCurtain,
   },
   {
-    id: 'tier-fly',
-    // Both sides looking at the same stage scene, and both hiding it. If a
-    // future slide shows the ladder outright there is nothing to part and the
-    // generic `camera` kernel is already the right answer.
-    matches: ({ from, to }) => (
-      from?.dataset.scene === 'tiers'
-      && to.dataset.scene === 'tiers'
-      && from.dataset.field !== 'scene'
-      && to.dataset.field !== 'scene'
+    id: 'counsel-walk-pull',
+    matches: ({ from, to, direction }) => (
+      direction > 0
+      && from?.dataset.slide === COUNSEL_PULL_FROM
+      && to.dataset.slide === COUNSEL_PULL_TO
     ),
-    kernel: tierFly,
+    kernel: counselWalkPull,
+  },
+  {
+    id: 'burnout-reveal',
+    matches: ({ from, to, direction }) => (
+      direction > 0
+      && from?.dataset.slide === BURNOUT_REVEAL_FROM
+      && to.dataset.slide === BURNOUT_REVEAL_TO
+    ),
+    kernel: burnoutReveal,
   },
 ]
 
@@ -1115,7 +1033,6 @@ const KERNELS: Record<TransitionKind, Kernel> = {
   'ink-bleed': inkBleed,
   letterbox,
   camera,
-  type,
   'foil-seal': foilSeal,
 }
 
@@ -1141,7 +1058,11 @@ export function runTransition(kind: TransitionKind, context: TransitionContext):
     // The morph goes first so its stand-in is measured against the layout the
     // kernel is about to start moving, and so the source is hidden before the
     // kernel's first frame rather than a frame into it.
-    runMorph(ctx, batch, TRANSITION_MS[kind] ?? TRANSITION_MS.cut)
+    // 10 → 11 is the real DOM slide translating to identity — a morph stand-in
+    // would be a second, warped object on top of that.
+    if (override?.id !== 'counsel-walk-pull' && override?.id !== 'burnout-reveal') {
+      runMorph(ctx, batch, TRANSITION_MS[kind] ?? TRANSITION_MS.cut)
+    }
     return kernel(ctx, batch)
   })
 }

@@ -402,6 +402,25 @@ export type PairedBarsFigure = {
 }
 
 /**
+ * `game-by-design` — the product loop that carries a learner
+ * from one reasoning-heavy case into the next.
+ *
+ * The failure branch is deliberately a risk rather than an outcome: the deck
+ * can support that sustained, effortful practice is vulnerable to drop-off,
+ * but it cannot claim this product has clinically eliminated burnout.
+ */
+export type RetentionLoopFigure = {
+  kind: 'retention-loop'
+  steps: Array<{
+    kicker: string
+    label: string
+    role: 'practice' | 'game'
+  }>
+  risk: { label: string; note: string }
+  returnLabel: string
+}
+
+/**
  * `game-never-gates` — the app's own unlock list, and the one row with no lock.
  *
  * Every `requires` string on this figure is quoted from the product, not
@@ -441,6 +460,15 @@ export type NumeralFigure = {
   spin?: number
 }
 
+/**
+ * `pov-graded-question` — gold foil seal behind the centred claim.
+ *
+ * No data. The claim is the headline; this is the stamp around it.
+ */
+export type ClaimSealFigure = {
+  kind: 'claim-seal'
+}
+
 export type FigureSpec =
   | NumeralFigure
   | BarPairFigure
@@ -457,7 +485,9 @@ export type FigureSpec =
   | SpokesFigure
   | CurrencyLiftFigure
   | PairedBarsFigure
+  | RetentionLoopFigure
   | GateFigure
+  | ClaimSealFigure
 
 export type FigureProps = {
   spec: FigureSpec

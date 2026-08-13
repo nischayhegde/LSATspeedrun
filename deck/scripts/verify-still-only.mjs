@@ -3,7 +3,8 @@
  * ways a demo slide can end up showing a still.
  *
  * `stillOnly` marks a slide that shows a captured frame and never embeds the
- * live app — `demo-focus-mode`, which was cut from a live demo to a still. Two
+ * live app — `demo-office-transformation`, whose before/after wipe is authored
+ * from two deterministic captures. Two
  * things have to be true for that to be safe on stage:
  *
  *   1. The slot must not register, or the hoisted stage would position the live
@@ -25,6 +26,7 @@ import { mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -41,13 +43,13 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
 // before its first check unless `--base` was passed — and the thing it checks
 // is the `stillOnly` unmount guard, which has no other test.
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/still-only')
 mkdirSync(OUT, { recursive: true })
 
 /** The slide that is a still and nothing else, and a genuinely live one. */
-const STILL_ONLY_SLIDE = flags.get('slide') || 'demo-focus-mode'
+const STILL_ONLY_SLIDE = flags.get('slide') || 'demo-office-transformation'
 const LIVE_SLIDE = 'demo-case-answer'
 
 const problems = []

@@ -3,14 +3,14 @@
  * Proves that a run of consecutive demo slides is one session of the app.
  *
  *     cd deck && npm run dev                              # 5180
- *     cd frontend && npm run dev                          # 5173
+ *     cd frontend && npm run dev                          # 5174
  *     cd backend && ... run.py                            # 5001
  *     cd deck && node scripts/verify-demo-continuity.mjs
  *
  * This is the regression test for the defect the demo runtime was rebuilt to fix:
- * `demo-case-answer`, `demo-case-verdict-review` and `demo-mega-litigation` are
- * authored as one continuous shot — work a case, read the verdict, then see the
- * firm's numbers — and every slide used to render its own `<iframe>` inside its
+ * `demo-case-answer`, `demo-office-treasury` and `demo-mega-litigation` are
+ * authored as one continuous shot — work a case, watch the fee buy something
+ * in the firm, then see the full sitting — and every slide used to render its own `<iframe>` inside its
  * own slide layer, which `use-deck.ts` destroys when a transition completes. Each
  * seam reloaded the app from cold and dropped the session.
  *
@@ -36,9 +36,10 @@
  *     rather than from a 20-40 second model call. That is the claim the whole
  *     act rests on, so it is checked directly rather than assumed: at rest there
  *     must be no grading spinner anywhere on screen.
- *   - The verdict slide is **the dashboard's answer wall**, not a second case.
- *     `demo-case-verdict-review` frames `/progress?tab=answers`, so the room
- *     watches that same question become a durable record.
+ *   - The next live beat is **the treasury loop**, not the dashboard.
+ *     `demo-office-treasury` frames `/firm?tab=decor&deckDemo=treasury`, buys
+ *     the seeded `trophy_shelf`, then jumps to the office so cash and the room
+ *     both move. The dashboard review tour is gone.
  *   - The deck and the app are on different origins, so a route change can only
  *     be done by reassigning `src`. Each seam therefore legitimately costs
  *     **exactly one** warm, already-authenticated reload. One is correct; two or
@@ -102,6 +103,7 @@ import { cpus, loadavg } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -118,7 +120,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
  * app on `localhost` is cross-site and every frame bounces to the login screen.
  */
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots/continuity')
 mkdirSync(OUT, { recursive: true })
@@ -548,138 +550,69 @@ if (beforeAdvance.focusInEmbed) {
   note('focus was not inside the embed, so this advance is a gentler test than a hand-worked slide')
 }
 
-// --- demo-case-verdict-review: the answer wall, in the same element --------
-console.log('\n\u2022 demo-case-answer \u2192 demo-case-verdict-review — the seam')
+// --- demo-office-treasury: cash moves, then the office updates --------
+console.log('\n\u2022 demo-case-answer \u2192 demo-office-treasury — the seam')
 await advance()
-// Longer than the 2200ms this used to allow. The dashboard's panels are lazy
-// chunks and the `?tab=` deep link scrolls the tab strip up once they have
-// height, so a shorter settle photographed a page that was still assembling —
-// and the screenshot below is meant to be looked at.
 await page.waitForTimeout(3400)
 const thirteen = await readFrame()
 
-// This is also the arrow-key regression test, and it is worth naming as one.
-// The embed is cross-origin, so while it holds focus every keystroke goes to the
-// app's document and none reach the deck's window listener — a presenter who
-// cannot advance is stranded on the demo slide with no keyboard route off it.
-// The stage's mitigation is to blur the frame on a pointer event outside the
-// embed, which is what the mouse move inside `advance()` exercises.
-if (thirteen.hash !== 'demo-case-verdict-review') {
+if (thirteen.hash !== 'demo-office-treasury') {
   fail(`ArrowRight did not advance off demo-case-answer (hash is still "${thirteen.hash}"). `
     + 'If the embed had focus, the deck never saw the key: check the pointer-driven blur in `demo-stage.tsx`.')
 } else {
   ok('ArrowRight advanced off the demo slide, so the presenter is not stranded on it')
 }
-if (!thirteen.present) fail('the embed disappeared crossing into demo-case-verdict-review')
+if (!thirteen.present) fail('the embed disappeared crossing into demo-office-treasury')
 if (thirteen.stamp !== beforeAdvance.stamp) {
-  fail(`the embed was remounted crossing into demo-case-verdict-review (stamp ${beforeAdvance.stamp} \u2192 ${thirteen.stamp}). `
+  fail(`the embed was remounted crossing into demo-office-treasury (stamp ${beforeAdvance.stamp} \u2192 ${thirteen.stamp}). `
     + 'This is the original defect.')
 } else {
-  ok(`the same iframe element survived into demo-case-verdict-review (stamp ${thirteen.stamp})`)
+  ok(`the same iframe element survived into demo-office-treasury (stamp ${thirteen.stamp})`)
 }
-// This slide points somewhere else in the app — historically a second, pre-graded
-// session; now the dashboard's answer wall. Either way the deck and the app are
-// on different origins, so a route change can only be done by reassigning `src`,
-// which reloads. One load event here is therefore correct; the invariant worth
-// holding is that the *element* survives, so the session cookie and the warm
-// connection are kept and no login appears.
 if (thirteen.loads > beforeAdvance.loads + 1) {
-  fail(`the embed reloaded ${thirteen.loads - beforeAdvance.loads} times crossing into demo-case-verdict-review; `
+  fail(`the embed reloaded ${thirteen.loads - beforeAdvance.loads} times crossing into demo-office-treasury; `
     + 'the choreography allows exactly one warm reload for the route change')
 } else {
-  ok(`${thirteen.loads - beforeAdvance.loads} warm reload crossing into demo-case-verdict-review, as the route change requires`)
+  ok(`${thirteen.loads - beforeAdvance.loads} warm reload crossing into demo-office-treasury, as the route change requires`)
 }
 {
-  // What this slide has to be on changed, and the check has to change with it.
-  // It used to re-display a verdict on a second pre-graded case, so the check
-  // was "a case route, but not the open one". The autoplay sequence now earns
-  // its verdict on the slide before, and this slide was repurposed to the beat
-  // the founders asked for at the start — that same question waiting in review
-  // on the dashboard. So the requirement is the dashboard, and specifically the
-  // answer wall: `/progress` alone lands on the skills matrix, two clicks from
-  // the thing the slide is about.
   const url = page.frames().find((frame) => frame.url().startsWith(APP) && !frame.url().includes('deck-warm'))?.url() ?? ''
   const route = url.replace(APP, '')
-  if (!/^\/progress/.test(route)) {
-    fail(`demo-case-verdict-review is not on the dashboard (${route}). It is the review beat: it needs /progress.`)
-  } else if (!/[?&]tab=answers\b/.test(route)) {
-    fail(`demo-case-verdict-review is on ${route}, which opens the dashboard on the skills matrix. `
-      + 'The Answer Log is behind a tab, not below the fold, so the route needs `/progress?tab=answers` '
-      + 'or the presenter has to find it on stage.')
+  if (!/^\/(firm|office)/.test(route)) {
+    fail(`demo-office-treasury is not on the firm or office (${route}). It is the treasury beat: it needs /firm or /office.`)
+  } else if (/[?&]deckDemo=dashboard\b/.test(route) || /^\/progress/.test(route)) {
+    fail(`demo-office-treasury is still on the dashboard (${route}). That review demo was removed.`)
   } else {
-    ok(`the embed is on the answer wall (${route})`)
-  }
-}
-
-// The route is the means; the panel being on screen is the end. Checked
-// separately because they can come apart in exactly one way that matters: the
-// app decides what `?tab=` does, so if that support is ever removed the URL
-// still reads `?tab=answers` and the slide quietly opens on the skills matrix
-// again. A check that only reads the URL would keep passing through that.
-{
-  const wall = await appFrame()
-  const found = wall
-    ? await wall.waitForSelector('.answer-log-grid .answer-tile', { timeout: 12_000 }).then(() => true).catch(() => false)
-    : false
-  if (!found) {
-    fail('the Answer Log never appeared on demo-case-verdict-review. The slide is the tile wall and the drawer '
-      + 'opened off it; without the wall there is nothing for the presenter to click and the beat does not exist. '
-      + 'Check that the app still honours `?tab=` on /progress.')
-  } else {
-    // The claim this slide rests on: the attempt the room just watched is the
-    // tile the presenter reaches for. Its title carries type, outcome, time and
-    // date, so it is printed whole — a person reading this report can see which
-    // question is on top without running anything.
-    const first = await wall.evaluate(() => {
-      const tile = document.querySelector('.answer-log-grid .answer-tile')
-      if (!tile) return null
-      const box = tile.getBoundingClientRect()
-      return {
-        title: tile.getAttribute('title') ?? '',
-        correct: tile.classList.contains('is-correct'),
-        inView: box.width > 0 && box.bottom > 0 && box.top < window.innerHeight,
-      }
-    }).catch(() => null)
-    if (!first) {
-      note('the Answer Log rendered but its first tile could not be read')
-    } else {
-      ok(`the answer wall is up, first tile: "${first.title}"`)
-      if (!first.correct) {
-        fail(`the first tile in the Answer Log is marked missed ("${first.title}"). The presenter opens this tile `
-          + 'while saying it is the question the room just watched being answered correctly. Staging stamps the '
-          + "driven attempt's `created_at` so it sorts first — a wrong tile on top means something else was "
-          + 'answered on this account since. Re-run `npm run stage-demo:fast`.')
-      }
-      // Weaker, and flagged rather than failed: the pinned question's type is
-      // recorded in `DEMO-NOTES.md` §2 rather than anywhere this script can read,
-      // so a mismatch is a prompt to look, not proof of a defect.
-      if (!/^Assumption\b/.test(first.title)) {
-        note(`the top tile reads "${first.title}", and DEMO-NOTES §2 pins the demo question as an `
-          + 'Assumption item. Worth one look before the talk.')
-      }
-      if (!first.inView) {
-        note('the first tile is outside the frame\u2019s viewport, so the presenter would have to '
-          + 'scroll to it on stage')
-      }
-    }
+    ok(`the embed is on the treasury loop (${route})`)
   }
 }
 
 if (thirteen.fit) {
   const worst = Math.max(...Object.values(thirteen.fit).map(Math.abs))
-  if (worst > 2) fail(`out of register on demo-case-verdict-review by ${worst}px: ${JSON.stringify(thirteen.fit)}`)
-  else ok(`still registered to within ${worst}px on demo-case-verdict-review`)
+  if (worst > 2) fail(`out of register on demo-office-treasury by ${worst}px: ${JSON.stringify(thirteen.fit)}`)
+  else ok(`still registered to within ${worst}px on demo-office-treasury`)
 }
-await page.screenshot({ path: resolve(OUT, 'demo-case-verdict-review.png') })
+await page.screenshot({ path: resolve(OUT, 'demo-office-treasury.png') })
 
 // --- demo-mega-litigation: a different route, so one navigation, same element ---
-console.log('\n\u2022 demo-case-verdict-review \u2192 demo-mega-litigation — on to /progress')
+console.log('\n\u2022 demo-office-treasury \u2192 demo-mega-litigation — on to /cases?tab=mega')
 await advance()
 await page.waitForTimeout(2200)
 const fourteen = await readFrame()
 if (fourteen.stamp !== thirteen.stamp) fail(`the embed was remounted crossing into demo-mega-litigation (${thirteen.stamp} \u2192 ${fourteen.stamp})`)
 else if (fourteen.loads > thirteen.loads + 1) fail(`the embed reloaded ${fourteen.loads - thirteen.loads} times crossing into demo-mega-litigation; the choreography allows exactly one`)
 else ok(`the same element carried through to demo-mega-litigation ("${fourteen.hash}"), signed in throughout`)
+{
+  const url = page.frames().find((frame) => frame.url().startsWith(APP) && !frame.url().includes('deck-warm'))?.url() ?? ''
+  const route = url.replace(APP, '')
+  if (!/^\/cases/.test(route) || !/[?&]tab=mega\b/.test(route)) {
+    fail(`demo-mega-litigation is not on Practice · Mega-litigation (${route}). It needs /cases?tab=mega.`)
+  } else if (/^\/progress/.test(route)) {
+    fail(`demo-mega-litigation is still on the dashboard (${route}). Mega lives on Practice now.`)
+  } else {
+    ok(`the embed is on the mega sitting home (${route})`)
+  }
+}
 await page.screenshot({ path: resolve(OUT, 'demo-mega-litigation.png') })
 
 // --- L reloads the slide's own route ---------------------------------------

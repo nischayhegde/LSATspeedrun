@@ -1,35 +1,26 @@
 import * as THREE from 'three'
 
-import { coverIsUp } from './cover-stage'
 import {
   CameraRig,
   PALETTE,
   disposeTree,
-  easeOutCubic,
-  labelPlane,
   seededRandom,
-  smoothstep,
 } from './scene-kit'
 import type { DeckScene, SceneContext } from './types'
 
 /**
- * The opening scene: the scales of justice assembling themselves out of a dark
- * room, over a receding skyline, in royal blue and gold.
+ * The title slide's background: the scales of justice at rest, over a receding
+ * skyline, in royal blue and gold.
  *
- * ## What this is a picture of
- *
- * The product's mark is a scales-of-justice glyph in navy, gold and cream — it is
- * the favicon, and the same four strokes appear on the boot spinner and on every
- * seal in the game. So the first thing the audience sees is that mark, built at
- * three dimensions and put together in front of them: eight parts fly in from
- * scattered positions and settle into a single object. That is the deck's whole
- * argument in one gesture, and it takes `ASSEMBLE_SECONDS` — currently 2.6, of
- * the slide's 7-second budget, so the composed mark owns most of the frame's
- * life rather than a minority of it.
+ * This used to assemble itself out of nine flying parts as the presentation
+ * opened. That gesture ate the title. The mark now stands composed from the
+ * first frame, with only motes, a slow pan sway, and the seal rings moving —
+ * a still picture that is slightly alive, not a cutaway the copy has to wait
+ * out.
  *
  * Behind it, sixty extruded blocks in three receding ranks read as a city under
- * fog — the skyline the firm ends up owning. In front of it, three light shafts
- * and a few hundred gold motes.
+ * fog. In front of it, three light shafts and a few hundred gold motes. The
+ * readable title is the DOM overlay, not this scene.
  *
  * ## Depth of field, honestly
  *
@@ -43,61 +34,12 @@ import type { DeckScene, SceneContext } from './types'
  * the correct answer for this render style rather than a compromise.
  */
 
-type Part = {
-  mesh: THREE.Object3D
-  /** Where the part starts, before assembly. */
-  from: THREE.Vector3
-  to: THREE.Vector3
-  fromQuaternion: THREE.Quaternion
-  toQuaternion: THREE.Quaternion
-  /** 0..1 along the assembly, so parts land in a deliberate order. */
-  delay: number
-}
-
-/**
- * How long the mark takes to put itself together, and it is a budget question
- * rather than a taste one.
- *
- * The slide is allotted `budgetSeconds: 7`. At the 4.2 this used to be, the
- * *composed* mark — the thing the whole gesture is for — existed for 2.8 of
- * those seconds, so the audience spent 60% of the deck's opening frame watching
- * parts fly and 40% looking at the finished object. That is backwards, and the
- * talk is cut to 4:50, so the fix is to land sooner rather than to hold the
- * slide longer.
- *
- * At 2.6 the composed frame gets 4.4 seconds, a clear majority of the slide.
- *
- * Note that this is not the old timing scaled down, which would just look
- * rushed. The compression is taken out of the *stagger* instead: `PART_WINDOW`
- * below went from .55 to .72, so each individual part still travels for about
- * 1.9 seconds against the 2.3 it had, while the gap between the first part
- * leaving and the last one leaving falls from 1.9 seconds to 0.7. The parts
- * overlap much more, which reads as one object converging rather than as nine
- * things queueing up, and no single part moves appreciably faster than before.
- */
-const ASSEMBLE_SECONDS = 2.6
-
-/**
- * The share of the assembly any one part spends travelling.
- *
- * The remainder, `1 - PART_WINDOW`, is what the per-part `delay` values are
- * spread across. Larger means more overlap and a more fluid convergence;
- * smaller means a more legible one-at-a-time build. See `ASSEMBLE_SECONDS`.
- */
-const PART_WINDOW = .72
-
 export function createHeroScene(context: SceneContext): DeckScene {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(PALETTE.stage)
   // Dense enough that the third rank of the skyline is barely a value change,
   // which is what makes the city read as distance rather than as small boxes.
   scene.fog = new THREE.FogExp2(0x070b14, .0165)
-
-  // Whether this scene is being built behind the start card, which decides
-  // whether the mark is already assembling on its first frame. Read once, here:
-  // the card raises the flag during its own first render, which is before
-  // `deck.tsx`'s effect builds this scene, so it is reliably up by now.
-  const startsCovered = coverIsUp()
 
   const rig = new CameraRig(
     {
@@ -280,28 +222,10 @@ export function createHeroScene(context: SceneContext): DeckScene {
   // two pans hanging from the beam ends, a plinth under it.
   const mark = new THREE.Group()
   scene.add(mark)
-  const parts: Part[] = []
 
-  const registerPart = (mesh: THREE.Object3D, to: THREE.Vector3, delay: number, tumble = 1) => {
+  const registerPart = (mesh: THREE.Object3D, to: THREE.Vector3) => {
     mark.add(mesh)
-    const toQuaternion = mesh.quaternion.clone()
-    // Parts arrive from a shell around the object rather than from off-screen:
-    // an object that assembles from beyond the frame reads as things flying in,
-    // and an object that assembles from just outside itself reads as an object
-    // pulling itself together.
-    const azimuth = random() * Math.PI * 2
-    const radius = 11 + random() * 9
-    const from = new THREE.Vector3(
-      to.x + Math.cos(azimuth) * radius,
-      to.y + (random() - .25) * 12,
-      to.z + Math.sin(azimuth) * radius * .55,
-    )
-    const fromQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      (random() - .5) * 3.1 * tumble,
-      (random() - .5) * 3.1 * tumble,
-      (random() - .5) * 3.1 * tumble,
-    )).multiply(toQuaternion)
-    parts.push({ mesh, from, to: to.clone(), fromQuaternion, toQuaternion, delay })
+    mesh.position.copy(to)
   }
 
   /**
@@ -363,28 +287,28 @@ export function createHeroScene(context: SceneContext): DeckScene {
   // a flat mark and this is a monument, and eight sides catch the key light on
   // two faces at once where four catch it on one.
   const base = new THREE.Mesh(new THREE.CylinderGeometry(gs(5), gs(5.4), gs(2), 8), navy)
-  registerPart(base, new THREE.Vector3(0, gy(21), 0), 0, .35)
+  registerPart(base, new THREE.Vector3(0, gy(21), 0))
 
   // `M10 18h4v2h-4z` — the plinth the column stands on.
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(gs(2), gs(2.2), gs(2), 8), navy)
-  registerPart(plinth, new THREE.Vector3(0, gy(19), 0), .05, .35)
+  registerPart(plinth, new THREE.Vector3(0, gy(19), 0))
 
   // `M11 7h2v11h-2z` — the column. Two glyph units across, so radius 1.
   const column = new THREE.Mesh(new THREE.CylinderGeometry(gs(.92), gs(1.08), gs(11), 16), navy)
-  registerPart(column, new THREE.Vector3(0, gy(12.5), 0), .16)
+  registerPart(column, new THREE.Vector3(0, gy(12.5), 0))
 
   // Not in the glyph. A gold collar where the beam crosses the column, because
   // in three dimensions a bar passing through a post needs a joint or it reads
   // as two objects that happen to overlap.
   const collar = new THREE.Mesh(new THREE.TorusGeometry(gs(1.32), gs(.3), 10, 24), goldBright)
   collar.rotation.x = Math.PI / 2
-  registerPart(collar, new THREE.Vector3(0, gy(8.6), 0), .3)
+  registerPart(collar, new THREE.Vector3(0, gy(8.6), 0))
 
   // `M3 6h18v2H3z` — the beam. Eighteen across and two thick, which is the
   // single biggest change to how the mark reads at distance: this is now a
   // heavy gold bar rather than a wire.
   const beam = new THREE.Mesh(new THREE.BoxGeometry(gs(18), gs(2), gs(1.3)), gold)
-  registerPart(beam, new THREE.Vector3(0, gy(7), 0), .42)
+  registerPart(beam, new THREE.Vector3(0, gy(7), 0))
 
   // `M10 3h4v3h-4z` — a block standing on the beam, which is what the glyph
   // draws and what the octahedron this used to be was not. Kept a plain box on
@@ -397,7 +321,7 @@ export function createHeroScene(context: SceneContext): DeckScene {
   // carries an emissive term, which is what a small bright accent at the top of
   // a dark object needs in order to stay the top of the object.
   const finial = new THREE.Mesh(new THREE.BoxGeometry(gs(2.7), gs(3), gs(1.1)), goldBright)
-  registerPart(finial, new THREE.Vector3(0, gy(4.5), 0), .56)
+  registerPart(finial, new THREE.Vector3(0, gy(4.5), 0))
 
   /**
    * A pan, with the group's origin at the point it hangs from — the underside of
@@ -437,28 +361,9 @@ export function createHeroScene(context: SceneContext): DeckScene {
   /** Where a pan hangs from: the beam's underside, at the hanger's own x. */
   const PAN_HANG_Y = gy(8)
   const leftPan = buildPan(-1)
-  registerPart(leftPan, new THREE.Vector3(gx(4.5), PAN_HANG_Y, 0), .68, .6)
+  registerPart(leftPan, new THREE.Vector3(gx(4.5), PAN_HANG_Y, 0))
   const rightPan = buildPan(1)
-  registerPart(rightPan, new THREE.Vector3(gx(19.5), PAN_HANG_Y, 0), .82, .6)
-
-  // The wordmark, laid into the floor in front of the plinth, struck rather
-  // than printed: the shadow pass sits under the face in the app's own foil
-  // relief colour. Set in the deck's display face, which is now Archivo — a
-  // wordmark in the 3D that did not match the wordmark in the DOM would be the
-  // most visible possible version of an inconsistent type system.
-  const wordShadow = labelPlane('LAWYER TYCOON', 1.06, {
-    pixels: 96, weight: 800, font: 'Archivo, Inter, sans-serif', letterSpacing: 9, color: 'rgba(104,68,16,.55)', align: 'center',
-  })
-  const word = labelPlane('LAWYER TYCOON', 1.06, {
-    pixels: 96, weight: 800, font: 'Archivo, Inter, sans-serif', letterSpacing: 9, color: '#f2c75b', align: 'center',
-  })
-  for (const [mesh, lift] of [[wordShadow, .014], [word, .02]] as const) {
-    mesh.rotation.x = -Math.PI / 2
-    mesh.position.set(0, lift, 7.1)
-    scene.add(mesh)
-  }
-  word.position.z -= .05
-  const wordMaterials = [wordShadow.material as THREE.Material, word.material as THREE.Material]
+  registerPart(rightPan, new THREE.Vector3(gx(19.5), PAN_HANG_Y, 0))
 
   // --- volumetric shafts ---------------------------------------------------
   // Additive open cones with `depthWrite` off, so they contribute light without
@@ -524,80 +429,33 @@ export function createHeroScene(context: SceneContext): DeckScene {
   const motes = new THREE.Points(moteGeometry, moteMaterial)
   scene.add(motes)
 
-  // --- state ---------------------------------------------------------------
-  /**
-   * The assembly is held while the cover is up.
-   *
-   * Without this the deck's opening gesture is wasted: the scene is built the
-   * instant the page loads, `ASSEMBLE_SECONDS` is 4.2, and the presenter spends
-   * a good deal longer than that on the title card before pressing Enter — so
-   * the shutter has always opened on a mark that finished assembling behind it,
-   * unseen. Holding it means the nine parts fly together *as the presentation
-   * begins*, which is when it was written to happen.
-   */
-  let assembly = context.reduced ? 1 : 0
-  let covered = startsCovered
-
-  const applyAssembly = () => {
-    for (const part of parts) {
-      // Each part gets the same shaped curve over a different window, so the
-      // object lands in an order — plinth, column, beam, then the pans, which is
-      // the order you would actually build it in.
-      const local = (assembly - part.delay * (1 - PART_WINDOW)) / PART_WINDOW
-      const t = easeOutCubic(Math.min(1, Math.max(0, local)))
-      part.mesh.position.lerpVectors(part.from, part.to, t)
-      part.mesh.quaternion.slerpQuaternions(part.fromQuaternion, part.toQuaternion, t)
-      const material = (part.mesh as THREE.Mesh).material as THREE.Material | undefined
-      if (material && 'opacity' in material) {
-        material.transparent = t < 1
-        ;(material as THREE.MeshStandardMaterial).opacity = t
-      }
-    }
-  }
-  applyAssembly()
-
   return {
     scene,
     camera: rig.camera,
 
     update(delta, elapsed) {
-      if (covered && !coverIsUp()) covered = false
-
-      if (!context.reduced && !covered) {
-        assembly = Math.min(1, assembly + delta / ASSEMBLE_SECONDS)
-        applyAssembly()
-
-        // The beam settles the way the boot spinner's does: the app animates its
-        // glyph with `boot-settle`, a ±5° rotation on a 2.1s period, and the
-        // same motion here ties the deck's first frame to the product's.
-        const settled = smoothstep((assembly - .75) / .25)
-        const swing = Math.sin(elapsed * (Math.PI * 2 / 2.1)) * .052
-        // Amplitude decays as the object completes, so it arrives at rest.
-        mark.rotation.z = swing * (1 - settled * .72)
-        mark.rotation.y = Math.sin(elapsed * .19) * .07 + (1 - settled) * .3
-        leftPan.position.y = PAN_HANG_Y + Math.sin(elapsed * .74) * .1
-        rightPan.position.y = PAN_HANG_Y - Math.sin(elapsed * .74) * .1
-
-        sealRings.rotation.y = elapsed * .028
-
-        const positions = moteGeometry.attributes.position as THREE.BufferAttribute
-        for (let index = 0; index < moteCount; index += 1) {
-          const y = positions.getY(index) + moteSpeeds[index] * delta
-          positions.setY(index, y > 27 ? -1 : y)
-          positions.setX(index, positions.getX(index) + Math.sin(elapsed * .5 + motePhases[index]) * delta * .12)
-        }
-        positions.needsUpdate = true
-
-        for (let index = 0; index < shaftMaterials.length; index += 1) {
-          const material = shaftMaterials[index] as THREE.MeshBasicMaterial
-          material.opacity = (.07 - index * .02) * (.78 + Math.sin(elapsed * (.4 + index * .17)) * .22)
-        }
+      if (context.reduced) {
+        rig.update(delta, context.pointer)
+        return
       }
 
-      // The wordmark fades up only once the object it names is standing.
-      const nameIn = smoothstep((assembly - .82) / .18)
-      for (const material of wordMaterials) {
-        ;(material as THREE.MeshBasicMaterial).opacity = nameIn
+      const swing = Math.sin(elapsed * (Math.PI * 2 / 2.1)) * .014
+      mark.rotation.z = swing
+      leftPan.position.y = PAN_HANG_Y + Math.sin(elapsed * .74) * .06
+      rightPan.position.y = PAN_HANG_Y - Math.sin(elapsed * .74) * .06
+      sealRings.rotation.y = elapsed * .018
+
+      const positions = moteGeometry.attributes.position as THREE.BufferAttribute
+      for (let index = 0; index < moteCount; index += 1) {
+        const y = positions.getY(index) + moteSpeeds[index] * delta
+        positions.setY(index, y > 27 ? -1 : y)
+        positions.setX(index, positions.getX(index) + Math.sin(elapsed * .5 + motePhases[index]) * delta * .12)
+      }
+      positions.needsUpdate = true
+
+      for (let index = 0; index < shaftMaterials.length; index += 1) {
+        const material = shaftMaterials[index] as THREE.MeshBasicMaterial
+        material.opacity = (.07 - index * .02) * (.78 + Math.sin(elapsed * (.4 + index * .17)) * .22)
       }
 
       rig.update(delta, context.pointer)
@@ -608,16 +466,13 @@ export function createHeroScene(context: SceneContext): DeckScene {
     },
 
     setFraming(name, immediate) {
-      // A long move: this scene's framings are far apart and the object in the
-      // middle is the thing being looked at, so the dolly is allowed to take its
-      // time. Anything under about a second here reads as a jump cut.
-      rig.go(name, immediate, 2.1)
+      rig.go(name, immediate ?? true, 0)
     },
 
     dispose() {
       environmentTarget?.dispose()
       disposeTree(scene)
-      for (const material of [...materials, ...shaftMaterials, hazeMaterial, moteMaterial, ...wordMaterials]) {
+      for (const material of [...materials, ...shaftMaterials, hazeMaterial, moteMaterial]) {
         material.dispose()
       }
       moteGeometry.dispose()

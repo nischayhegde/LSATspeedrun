@@ -90,6 +90,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inflateSync } from 'node:zlib'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -184,7 +185,7 @@ const number = (name, fallback) => {
 // every demo slide looked plausible and showed a login screen.
 const BASE = (flags.get('base') || 'http://localhost:5180').replace(/\/$/, '')
 /** The app the demo slides frame. Must be `localhost` for the same cookie reason. */
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const NO_AUTH = flags.has('no-auth')
 const OUT = resolve(DECK_DIR, flags.get('out') || '.deck-shots')
 const WANTED = (flags.get('slides') || 'all').trim()
@@ -453,7 +454,7 @@ function withTimeout(promise, ms, label) {
  *
  * This distinction is the whole reason the run can fail on a console error at
  * all. Most of what lands in `consoleErrors` during a stills pass is the app
- * stack being down — a refused connection on 5173, a 502 from `demo-api` — and
+ * stack being down — a refused connection on 5174, a 502 from `demo-api` — and
  * gating on those would make the sweep unrunnable in exactly the mode it is
  * meant to be run in. So the gate names the specific messages that say a React
  * tree is in an invalid state, and lets everything else stay informational.
@@ -646,7 +647,7 @@ async function captureSlide(context, { id, index }, options) {
     // real app, correctly framed, with the right URL in the chrome above it. It
     // has already been reported once as six broken slides in the deck. So it is
     // named here explicitly rather than left for a human to notice.
-    const embed = page.frames().find((frame) => /^https?:\/\/localhost:5173/.test(frame.url()) && !frame.url().includes('deck-warm'))
+    const embed = page.frames().find((frame) => frame.url().startsWith(APP) && !frame.url().includes('deck-warm'))
     if (embed) {
       const inner = await embed.evaluate(() => ({
         path: window.location.pathname,
@@ -961,7 +962,7 @@ if (signedOut.length) {
   console.log(`  ${signedOut.map((r) => r.id).join(', ')}`)
   console.log('\nThose shots look like working slides and are not. Do not use them to judge')
   console.log('the deck. Shoot from http://localhost:5180 — never 127.0.0.1 — with the app')
-  console.log('on :5173 and the backend on :5001, after `cd deck && npm run reset-demo`.')
+  console.log('on :5174 and the backend on :5001, after `cd deck && npm run reset-demo`.')
   console.log('See "Shooting a screenshot pass" in deck/DEMO-NOTES.md.')
   console.log(`${'!'.repeat(64)}`)
 }

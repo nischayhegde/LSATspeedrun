@@ -18,11 +18,12 @@ import './mega-litigation.css'
  * a home next to the practice it is supposed to steer, and gives every past
  * sitting a real result page.
  *
- * No new backend exists for this. The list is `/history/sessions` filtered to
- * `mode === "diagnostic"`; a result is `/history/attempts?session_id=…`, which
- * carries enough per-question detail to rebuild the score, the section split
- * and the type split client-side; and a single question is
- * `/history/attempts/<id>` through the dashboard's own reader.
+ * Past sittings come from `/history/sessions?mode=diagnostic`. A mixed
+ * practice feed can bury the only form behind fifty case runs, so the filter
+ * is on the query. A result is `/history/attempts?session_id=…`, which carries
+ * enough per-question detail to rebuild the score, the section split and the
+ * type split client-side; a single question is `/history/attempts/<id>`
+ * through the dashboard's own reader.
  */
 
 function formatDate(value: string | null) {
@@ -291,13 +292,10 @@ function MegaResult({ session }: { session: HistorySession }) {
 
 function PastMegaLitigations() {
   const [open, setOpen] = useState<string | null>(null)
-  // `/history/sessions` is a mixed feed, so the page size is deliberately
-  // generous: filtering to diagnostics client-side would otherwise show two
-  // rows and claim there were no more.
   const history = useInfiniteQuery({
     queryKey: ['mega-history'],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => api.sessionHistory({ limit: 50, offset: pageParam as number }),
+    queryFn: ({ pageParam }) => api.sessionHistory({ limit: 100, offset: pageParam as number, mode: 'diagnostic' }),
     getNextPageParam: (last) => (last.has_more ? last.offset + last.limit : undefined),
   })
   const sessions = (history.data?.pages.flatMap((page) => page.sessions) ?? [])

@@ -50,6 +50,8 @@ export type IllustratedStyleOptions = {
   saturation?: number
   /** Must match the exposure the scene was graded at. */
   exposure?: number
+  /** MSAA samples on the scene target. 4 is the default; 2 is cheaper in an embed. */
+  samples?: number
 }
 
 const DEFAULTS: Required<IllustratedStyleOptions> = {
@@ -305,7 +307,7 @@ export class IllustratedRenderPass {
         // Multisampling has to happen before the composite, because resolving
         // afterwards would mean edge-detecting an already-aliased image and the
         // contours would crawl.
-        samples: 4,
+        samples: options.samples ?? 4,
       },
     )
 

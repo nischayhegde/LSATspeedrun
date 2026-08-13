@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import type { SceneId, SlideSpec, TransitionKind } from '../slides/types'
 import { sceneIsMounted, stageSceneFor } from '../scenes/registry'
+import { BURNOUT_REVEAL_FROM, BURNOUT_REVEAL_TO } from '../scenes/burnout-reveal'
+import { COUNSEL_PULL_FROM, COUNSEL_PULL_TO } from '../scenes/counsel-pull'
 import type { DeckStage } from '../scenes/stage'
 import { runTransition, transitionBlendsScene, type RunningTransition } from './transitions'
 
@@ -53,6 +55,12 @@ export type DeckController = {
   goto: (target: number | string, options?: { push?: boolean }) => void
   /** True while a transition is in flight. */
   moving: boolean
+  /**
+   * True once the 10 → 11 pull has covered the counsel. The canvas must hide
+   * and the renderer must park *before* slide 11 is the only thing on screen,
+   * otherwise the unused backdrop (or a leftover counsel frame) flashes.
+   */
+  stageParked: boolean
 
   gridOpen: boolean
   toggleGrid: () => void
@@ -110,6 +118,7 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
   const [index, setIndex] = useState(() => readHash(slides))
   const [layers, setLayers] = useState<DeckLayers>(() => ({ a: readHash(slides), b: null, live: 'a' }))
   const [moving, setMoving] = useState(false)
+  const [stageParked, setStageParked] = useState(false)
   const [gridOpen, setGridOpen] = useState(false)
   const [qaOpen, setQaOpen] = useState(false)
   const [presenterOpen, setPresenterOpen] = useState(() => search.has('notes') || search.has('present'))
@@ -188,6 +197,7 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
     setLayers({ ...layers, [to]: clamped, live: to } as DeckLayers)
     setIndex(clamped)
     setMoving(true)
+    setStageParked(false)
     setAnnotations(0)
     setAppScenes(computeAppScenes(clamped, index))
 
@@ -211,16 +221,40 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
     if (!to || !overlay) return
 
     const slide = slides[index]
+    const fromSlide = job.fromIndex != null ? slides[job.fromIndex] : undefined
+    // 10 → 11: papers and lockup fade on the shared navy; counsel-stage
+    // fades in at midpoint. 11 → 12 is the grab-pull and is a different
+    // hold. `finish()` flushes the midpoint so a mashed next cannot leave
+    // the outgoing scene half-gone.
+    const holdCounsel = Boolean(
+      !reduced
+      && job.direction > 0
+      && fromSlide?.id === COUNSEL_PULL_FROM
+      && slide.id === COUNSEL_PULL_TO,
+    )
+    const holdBurnout = Boolean(
+      !reduced
+      && job.direction > 0
+      && fromSlide?.id === BURNOUT_REVEAL_FROM
+      && slide.id === BURNOUT_REVEAL_TO,
+    )
 
     // The stage moves in the same turn as the DOM. `camera` shows its work by
     // sharing a scene, so `stage.show` recognises the same id and tweens rather
     // than blending; everything else gets the ink field.
     if (stage) {
       const stageScene = stageSceneFor(slide.scene?.id)
-      // Alternate the wash direction so two ink dissolves in a row are not the
-      // same picture twice.
       stage.setDissolveDirection(job.direction > 0 ? 1 : -1, index % 2 ? .38 : -.3)
-      void stage.show(stageScene, slide.scene?.framing, slide.scene?.params, transitionBlendsScene(job.kind))
+      if (holdBurnout) {
+        void stage.show('burnout', 'fade', fromSlide?.scene?.params, 'none')
+      } else if (holdCounsel) {
+        void stage.show('counsel-stage', 'grab-pull', fromSlide?.scene?.params, 'none')
+      } else if (stageScene !== 'none') {
+        // Skip `none` (the unused backdrop library). Field slides and demos
+        // do not need a stage scene; swapping one in is the 3D interstitial
+        // that flashes between copy slides.
+        void stage.show(stageScene, slide.scene?.framing, slide.scene?.params, transitionBlendsScene(job.kind))
+      }
     }
 
     const transition = runTransition(job.kind, {
@@ -234,6 +268,16 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
         // is the heaviest thing in the deck and the moment it stops being
         // visible is the moment to stop paying for it.
         setAppScenes(computeAppScenes(index, null))
+        if (holdBurnout) {
+          void stage?.show('counsel-stage', 'spot', { ...slide.scene?.params, fadeIn: true }, 'none')
+        }
+        if (holdCounsel) {
+          // Slide 11 is already identity. Tear the counsel canvas down *now*
+          // so it cannot flash, and do not `show('none')` — that loads the
+          // unused library/skyline backdrop under the next slide.
+          setStageParked(true)
+          stage?.clear()
+        }
       },
     })
     running.current = transition
@@ -260,7 +304,10 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
   useEffect(() => {
     if (!stage) return
     const slide = slides[index]
-    void stage.show(stageSceneFor(slide.scene?.id), slide.scene?.framing, slide.scene?.params, 'none')
+    const stageScene = stageSceneFor(slide.scene?.id)
+    if (stageScene !== 'none') {
+      void stage.show(stageScene, slide.scene?.framing, slide.scene?.params, 'none')
+    }
     setAppScenes(computeAppScenes(index, null))
     stage.start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,6 +412,7 @@ export function useDeck(slides: readonly SlideSpec[], stage: DeckStage | null): 
     previous,
     goto,
     moving,
+    stageParked,
     gridOpen,
     toggleGrid: useCallback(() => setGridOpen((open) => !open), []),
     qaOpen,

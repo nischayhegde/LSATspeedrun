@@ -25,6 +25,21 @@ export type SceneContext = {
    * static slide feel like a held shot rather than a photograph.
    */
   pointer: { x: number; y: number }
+  /**
+   * This frame's `requestAnimationFrame` timestamp, in milliseconds, mutated in
+   * place by the stage each tick.
+   *
+   * For anything whose position a viewer can see travelling, prefer this over
+   * calling `performance.now()` inside `update`. They share an origin, so both
+   * stay in step with the WAAPI and `setTimeout` clocks the DOM half of a
+   * transition runs on — but this one is sampled once, at the frame boundary,
+   * and is therefore evenly spaced. `performance.now()` read mid-update returns
+   * the moment the call happened, which floats by however long the rest of the
+   * frame took: a millisecond of that on a body crossing the screen in two
+   * seconds is a pixel of shudder, every frame, in whichever direction the
+   * scheduler happened to be late.
+   */
+  frameTime: number
 }
 
 export type DeckScene = {
@@ -51,6 +66,18 @@ export type DeckScene = {
   setFraming(name: string | undefined, immediate: boolean): void
   /** Free parameters from the slide registry, re-applied on every show. */
   setParams?(params: Record<string, string | number | boolean>): void
+  /**
+   * Overrides for the shared illustrated pass while this scene is on screen.
+   * Counsel-stage sets flatten/grain to 0 so the Luxo key actually models
+   * the figure instead of being quantized into paint bands.
+   */
+  grade?: {
+    inkStrength?: number
+    bands?: number
+    flatten?: number
+    grain?: number
+    saturation?: number
+  }
   /**
    * Release every geometry, material and texture the scene created.
    *

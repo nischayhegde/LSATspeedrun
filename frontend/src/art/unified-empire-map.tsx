@@ -175,22 +175,28 @@ function tierState(tier: number, officeTier: number): MapSceneTier['state'] {
   return 'locked'
 }
 
-export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel }: {
+export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel, demo = false, finalDemo = false }: {
   game: GameState
   /** A rival key handed over from the firm tab's "Show on the map". */
   focusRival?: string | null
   onManage: (tab: 'upgrades' | 'rivals') => void
   empireValueLabel: string
+  /** Deck-only tour: begin with the whole district rather than a close-up. */
+  demo?: boolean
+  /** Deck-only finale: open the final district with its last office selected. */
+  finalDemo?: boolean
 }) {
   const { play } = useSound()
   const navigate = useNavigate()
   const currentRegion = regionForTier(game.office_tier)
   const focusAsset = focusRival ? game.catalog.assets.find((asset) => asset.key === focusRival && asset.type === 'rival') : undefined
-  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>((focusAsset ? regionForTier(focusAsset.tier) : currentRegion).key)
-  const [selectedKey, setSelectedKey] = useState(focusAsset ? `rival-${focusAsset.key}` : '')
+  const finalTier = game.catalog.tiers[game.catalog.tiers.length - 1]
+  const finalRegion = finalTier ? regionForTier(finalTier.tier) : currentRegion
+  const [activeRegionKey, setActiveRegionKey] = useState<MapRegionKey>((finalDemo ? finalRegion : focusAsset ? regionForTier(focusAsset.tier) : currentRegion).key)
+  const [selectedKey, setSelectedKey] = useState(finalDemo && finalTier ? `tier-${finalTier.tier}` : focusAsset ? `rival-${focusAsset.key}` : '')
   const [viewMode, setViewMode] = useState<MapViewMode>(focusAsset ? 'rivals' : 'career')
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
-  const [cameraCommand, setCameraCommand] = useState<{ id: number; action: MapCameraAction; landmark?: string }>({ id: 0, action: 'focus' })
+  const [cameraCommand, setCameraCommand] = useState<{ id: number; action: MapCameraAction; landmark?: string }>({ id: 0, action: demo ? 'home' : 'focus' })
   const [landmarks, setLandmarks] = useState<MapLandmark[]>([])
   const [activeLandmark, setActiveLandmark] = useState<MapLandmark | null>(null)
   const [landmarkTip, setLandmarkTip] = useState<{ landmark: MapLandmark; x: number; y: number } | null>(null)
@@ -216,6 +222,13 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
     })
     return () => { cancelled = true }
   }, [cosmeticsKey])
+  useEffect(() => {
+    if (!demo || !dressed) return
+    const timer = window.setTimeout(() => {
+      setCameraCommand((command) => ({ id: command.id + 1, action: 'home' }))
+    }, 550)
+    return () => window.clearTimeout(timer)
+  }, [demo, dressed])
 
   const points = useMemo<MapScenePoint[]>(() => {
     const tiers: MapSceneTier[] = game.catalog.tiers
@@ -325,7 +338,6 @@ export function UnifiedEmpireMap({ game, focusRival, onManage, empireValueLabel 
   const travelToLandmarkKey = useCallback((key: string) => {
     const landmark = landmarks.find((candidate) => candidate.key === key)
     if (landmark) travelToLandmark(landmark)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landmarks])
 
   const sendCameraCommand = (action: MapCameraAction) => {

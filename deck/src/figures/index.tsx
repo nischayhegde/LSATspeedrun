@@ -13,7 +13,9 @@ import { MarketLedger } from './market-ledger'
 import { MethodLab } from './method-lab'
 import { Numeral } from './numeral'
 import { PairedBars } from './paired-bars'
+import { ClaimSeal } from './claim-seal'
 import { ReasoningCard } from './reasoning-card'
+import { RetentionLoop } from './retention-loop'
 import { Route } from './route'
 import { SignalIndex } from './signal-index'
 import { Spokes } from './spokes'
@@ -57,7 +59,7 @@ export function Figure({ spec, active, reduced }: FigureProps): ReactElement | n
       data-in={active ? 'true' : 'false'}
       data-reduced={reduced ? 'true' : 'false'}
       data-fit={fit < 1 ? fit.toFixed(3) : undefined}
-      style={fit < 1 ? { transform: `scale(${fit})` } : undefined}
+      style={fit < 1 ? { transform: `scale(${fit})`, transformOrigin: '50% 50%' } : undefined}
     >
       {body(spec, active, reduced)}
     </div>
@@ -102,8 +104,12 @@ function body(spec: FigureSpec, active: boolean, reduced: boolean): ReactNode {
       return <CurrencyLift spec={spec} active={active} reduced={reduced} />
     case 'paired-bars':
       return <PairedBars spec={spec} active={active} reduced={reduced} />
+    case 'retention-loop':
+      return <RetentionLoop spec={spec} active={active} reduced={reduced} />
     case 'gate':
       return <Gate spec={spec} active={active} reduced={reduced} />
+    case 'claim-seal':
+      return <ClaimSeal spec={spec} active={active} reduced={reduced} />
     default:
       return null
   }

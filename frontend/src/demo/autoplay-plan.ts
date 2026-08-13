@@ -50,6 +50,8 @@ type SharedPace = {
   warmupMs: number
   /** One eased scroll. Long enough to read as a hand, short enough to not idle. */
   scrollMs: number
+  /** Cursor rests on a control before it clicks, so the room sees what will be pressed. */
+  hoverMs: number
   /** Between the choice lighting up and the answer being submitted. */
   selectMs: number
   /** After the verdict lands, before the page is re-framed around it. */
@@ -82,7 +84,7 @@ export type SoloPace = SharedPace & {
   choicesMs: number
 }
 
-export type AutoplayScene = 'run' | 'solo'
+export type AutoplayScene = 'run' | 'solo' | 'pitch'
 
 /**
  * The measured pace, not an estimated one.
@@ -112,6 +114,7 @@ export type AutoplayScene = 'run' | 'solo'
 export const AUTOPLAY_PACE: RunPace = {
   warmupMs: 700,
   scrollMs: 500,
+  hoverMs: 320,
   readMs: 1350,
   selectMs: 480,
   verdictSettleMs: 220,
@@ -152,6 +155,7 @@ export const AUTOPLAY_PACE: RunPace = {
 export const SOLO_PACE: SoloPace = {
   warmupMs: 900,
   scrollMs: 520,
+  hoverMs: 600,
   strategyMs: 2_600,
   appliedMs: 900,
   stemMs: 4_200,
@@ -164,6 +168,27 @@ export const SOLO_PACE: SoloPace = {
   selectMs: 1_400,
   verdictSettleMs: 260,
   verdictMs: 6_500,
+}
+
+/**
+ * Pitch-deck solo: the product loop, paced like a person using it.
+ *
+ * Hover on the control, click, pause on the result. Measured shape is ~22–26
+ * seconds to rest, inside the slide's 30-second hold, so the founder can talk
+ * over each beat instead of chasing a skip-through.
+ */
+export const PITCH_SOLO_PACE: SoloPace = {
+  warmupMs: 900,
+  scrollMs: 400,
+  hoverMs: 720,
+  strategyMs: 2_200,
+  appliedMs: 1_300,
+  stemMs: 2_200,
+  reasoningMs: 2_400,
+  choicesMs: 1_300,
+  selectMs: 1_300,
+  verdictSettleMs: 280,
+  verdictMs: 4_000,
 }
 
 export type AutoplayRequest =
@@ -212,12 +237,15 @@ export function readAutoplayRequest(search: string): AutoplayRequest | null {
   const tempo = Number(params.get('autoplayTempo'))
   const factor = Number.isFinite(tempo) && tempo >= 0.4 && tempo <= 4 ? tempo : 1
   const asked = (params.get('autoplayScene') || '').trim().toLowerCase()
-  const scene: AutoplayScene = asked === 'solo' || asked === 'run'
+  const scene: AutoplayScene = asked === 'solo' || asked === 'run' || asked === 'pitch'
     ? asked
     : answers.length === 1 ? 'solo' : 'run'
-  return scene === 'solo'
-    ? { scene, answers, pace: scalePace(SOLO_PACE, factor) }
-    : { scene, answers, pace: scalePace(AUTOPLAY_PACE, factor) }
+  if (scene === 'run') return { scene, answers, pace: scalePace(AUTOPLAY_PACE, factor) }
+  return {
+    scene: 'solo',
+    answers,
+    pace: scalePace(scene === 'pitch' ? PITCH_SOLO_PACE : SOLO_PACE, factor),
+  }
 }
 
 // ---------------------------------------------------------------------------

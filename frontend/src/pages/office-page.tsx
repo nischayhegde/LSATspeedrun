@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -10,10 +10,11 @@ import {
   Trophy,
   Wrench,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
+import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
 import { OfficeEventPopup } from '../office-event'
 import { ClientPortrait, ExplorableOffice } from '../game-art'
 import { openEpilogue } from '../narrative'
@@ -27,19 +28,78 @@ import '../mobile/office-page.css'
 
 export function OfficePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deckDemoKind = searchParams.get('deckDemo')
+  const deckDemo = deckDemoKind === 'client'
+  const deckTreasury = deckDemoKind === 'treasury'
   const { play } = useSound()
   useAmbientMusic('office')
   const [mobileBriefOpen, setMobileBriefOpen] = useState(false)
   const [wardrobeOpen, setWardrobeOpen] = useState(false)
+  const [demoBeat, setDemoBeat] = useState(0)
   const gameQuery = useGame()
   const current = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession })
   const start = useMutation({
     mutationFn: () => api.startPractice({ size: 3 }),
     onSuccess: ({ session }) => {
       void play('file-open', { id: `office-case-open:${session.id}`, seed: session.id, intensity: .58 })
-      navigate(`/cases/${session.id}`)
+      navigate(`/cases/${session.id}${deckDemo ? '?deckDemo=client' : ''}`)
     },
   })
+  useEffect(() => {
+    if (!deckDemo || gameQuery.isLoading || current.isLoading) return
+    let cancelled = false
+    const cursor = createDemoCursor()
+    const abort = new AbortController()
+    const hotspotSelector = '.office-page[data-deck-demo="client"] .world-zone.zone-case.is-client-anchor, .office-page[data-deck-demo="client"] .world-zone.zone-case'
+    void (async () => {
+      const hotspot = await waitForPainted(hotspotSelector, 8_000, abort.signal)
+      if (cancelled || !hotspot) return
+      cursor.showAt(window.innerWidth * 0.36, window.innerHeight * 0.58)
+      await demoSleep(2_800, abort.signal)
+      if (cancelled) return
+      await cursor.hoverClick(hotspot, { hoverMs: 1_050, moveMs: 640, signal: abort.signal })
+      if (cancelled) return
+      setDemoBeat(1)
+      await demoSleep(2_400, abort.signal)
+      if (cancelled) return
+      const revealed = document.querySelector<HTMLElement>('.office-page[data-deck-demo="client"] .world-zone.zone-case.is-revealed') ?? hotspot
+      await cursor.hoverClick(revealed, { hoverMs: 920, moveMs: 320, signal: abort.signal })
+      if (cancelled) return
+      setDemoBeat(2)
+      await demoSleep(2_400, abort.signal)
+      cursor.hide()
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+      cursor.destroy()
+    }
+  }, [deckDemo, gameQuery.isLoading, current.isLoading])
+  useEffect(() => {
+    if (!deckTreasury || gameQuery.isLoading) return
+    let cancelled = false
+    const abort = new AbortController()
+    const timers: number[] = []
+    const focusShelf = () => {
+      const office = document.querySelector('.av-office')
+      office?.dispatchEvent(new CustomEvent('office-focus-asset', { detail: { key: 'trophy_shelf' } }))
+    }
+    void (async () => {
+      const office = await waitForPainted('.av-office', 8_000, abort.signal)
+      if (cancelled || !office) return
+      await demoSleep(400, abort.signal)
+      if (cancelled) return
+      focusShelf()
+      // One retry if the shelf mesh was not in the scene on the first ping.
+      timers.push(window.setTimeout(focusShelf, 800))
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+      timers.forEach((timer) => window.clearTimeout(timer))
+    }
+  }, [deckTreasury, gameQuery.isLoading])
   if (gameQuery.isLoading || current.isLoading) return <LoadingScreen />
   if (gameQuery.error) return <div className="contained"><ErrorNotice error={gameQuery.error} /></div>
   const game = gameQuery.data!.game!
@@ -55,10 +115,51 @@ export function OfficePage() {
   const milestone = game.next_milestone
   const milestoneProgress = milestone ? Math.min(100, Math.round(game.cash / Math.max(1, milestone.cost) * 100)) : 100
 
-  const openCase = () => active ? navigate(`/cases/${active.id}`) : start.mutate()
+  const openCase = () => active ? navigate(`/cases/${active.id}${deckDemo ? '?deckDemo=client' : ''}`) : start.mutate()
+  const demoCopy = [
+    ['The working office', 'The 3D room is the navigation surface. People and objects are live entry points.'],
+    ['Walk-in client', `${workingClient.name} is waiting. Taking this case starts a real LSAT question.`],
+    ['Resume the case', 'Retrieval, explanation, strategy — that loop is what grows the firm.'],
+  ] as const
+  const treasuryCopy = [
+    'The fee became an object',
+    'The trophy shelf is in the room because you practised. Cash moved. The office changed.',
+  ] as const
 
   return (
-    <div className="office-page office-game-page">
+    <div className="office-page office-game-page" data-deck-demo={deckTreasury ? 'treasury' : deckDemo ? 'client' : undefined}>
+      {deckDemo && (
+        <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+          <span data-state={demoBeat === 0 ? 'active' : 'complete'}>01 · Office scene</span>
+          <i />
+          <span data-state={demoBeat === 1 ? 'active' : demoBeat > 1 ? 'complete' : 'next'}>02 · Click client</span>
+          <i />
+          <span data-state={demoBeat === 2 ? 'active' : 'next'}>03 · Resume question</span>
+        </div>
+      )}
+      {deckTreasury && (
+        <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+          <span data-state="complete">01 · Treasury</span>
+          <i />
+          <span data-state="complete">02 · Purchase</span>
+          <i />
+          <span data-state="active">03 · Office updates</span>
+        </div>
+      )}
+      {deckDemo && (
+        <div className="deck-demo-caption" key={demoBeat} aria-live="polite">
+          <small>PRODUCT LOOP · {String(demoBeat + 1).padStart(2, '0')}</small>
+          <strong>{demoCopy[demoBeat][0]}</strong>
+          <span>{demoCopy[demoBeat][1]}</span>
+        </div>
+      )}
+      {deckTreasury && (
+        <div className="deck-demo-caption" aria-live="polite">
+          <small>FEES → FIRM · 03</small>
+          <strong>{treasuryCopy[0]}</strong>
+          <span>{treasuryCopy[1]}</span>
+        </div>
+      )}
       {current.error && (
         <div className="partial-load-notice">
           <ErrorNotice error={current.error} retrying={current.isFetching} onRetry={() => void current.refetch()} />
@@ -146,6 +247,7 @@ export function OfficePage() {
           onFirm={() => navigate('/firm')}
           onEmpire={() => navigate('/map')}
           onStory={() => navigate('/story')}
+          demo={deckDemo || deckTreasury}
         />
 
         <aside className={`office-upkeep-strip ${game.upkeep.completed ? 'is-complete' : ''} ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}>
@@ -191,7 +293,7 @@ export function OfficePage() {
         </aside>
       </section>
 
-      <OfficeEventPopup game={game} />
+      {deckDemo || deckTreasury ? null : <OfficeEventPopup game={game} />}
 
       <section className="office-gamebar">
         <article className="client-quest-card">

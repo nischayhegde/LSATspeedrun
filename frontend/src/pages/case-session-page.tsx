@@ -15,7 +15,7 @@ import {
   Target,
   TimerReset,
 } from 'lucide-react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen, useRestoredChrome } from '../components'
@@ -298,6 +298,8 @@ function CaseSessionError({ error }: { error: unknown }) {
 
 export function CaseSessionPage() {
   const { sessionId } = useParams()
+  const [searchParams] = useSearchParams()
+  const deckClientDemo = searchParams.get('deckDemo') === 'client'
   const sessionQuery = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => api.session(sessionId!),
@@ -314,6 +316,22 @@ export function CaseSessionPage() {
   if (session.status === 'completed' && !session.pending_result) return <CompletedSessionReview sessionId={session.id} />
   return (
     <div className="session-page">
+      {deckClientDemo && (
+        <>
+          <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+            <span data-state="complete">01 · Office scene</span>
+            <i />
+            <span data-state="complete">02 · Click client</span>
+            <i />
+            <span data-state="active">03 · Resume question</span>
+          </div>
+          <div className="deck-demo-caption">
+            <small>PRODUCT LOOP · 03</small>
+            <strong>Practice is the case file</strong>
+            <span>Strategy, write-why, answer — the same loop that funds the office.</span>
+          </div>
+        </>
+      )}
       {/* A mega-litigation runs in one sitting, so there is no pause to offer — the server refuses one. */}
       {!session.pending_result && (session.mode === 'diagnostic'
         ? <div className="session-controls"><span className="one-sitting-note"><span className="one-sitting-note-long">One sitting · the clock does not stop</span><span className="one-sitting-note-short">No pause</span></span></div>

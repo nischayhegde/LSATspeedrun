@@ -238,6 +238,7 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
    */
   const toggled = isToggled(demo)
   const sessionId = status.sessionId || demoConfig.liveSessionId
+  const soloSessionId = status.soloSessionId
   const authEpoch = status.authEpoch
   /**
    * The epoch the frame's current contents were loaded under. Differs from
@@ -364,12 +365,26 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     const staleAuth = authEpoch !== loadedUnderEpoch.current
     loadedUnderEpoch.current = authEpoch
 
+    const startRun = (src: string) => {
+      runCounter.current += 1
+      believed.current = src
+      setRun({ id: runCounter.current, src })
+      setLoading(true)
+    }
+
     // 1 — a new run.
     if (!run || !previousDemo) {
-      runCounter.current += 1
-      believed.current = url
-      setRun({ id: runCounter.current, src: url })
-      setLoading(true)
+      startRun(url)
+      return
+    }
+    // 1b — the deck signed this profile in since the frame was loaded. The
+    // frame is sitting on `/login` (it loaded with no cookie) and the same URL
+    // will now answer with the app. Assigning `iframe.src` to the value it
+    // already holds is a no-op in Chrome, so the loading cover would stay up
+    // forever (`onLoad` never fires). Remounting is the reload this comment
+    // has always asked for.
+    if (staleAuth) {
+      startRun(url)
       return
     }
     // 2 — the slide says it continues the one we just left. The frame is left
@@ -383,34 +398,51 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
       believed.current = url
       return
     }
-    // 3 — the frame is already where this slide wants it. Unless the deck signed
-    // this profile in since the frame was loaded, in which case the frame is
-    // sitting on the login screen it was given when it had no cookie, and the same
-    // URL will now answer with the app.
-    if (believed.current === url && !staleAuth) return
-    // 4 — a deliberate navigation of the surviving element. Imperative, so that
-    // React's own view of `src` never enters into it.
+    // 3 — the frame is already where this slide wants it.
+    if (believed.current === url) return
+    // 4 — navigate the surviving element to this slide's route.
+    //
+    // `run.src` has to change with it. The iframe's `src` prop is React-controlled,
+    // so assigning `frame.current.src` and leaving `run.src` on the previous slide
+    // lets the next render (this `setLoading(true)`, or `onLoad`) write the old
+    // URL back. That is how 14 → 15, `/cases/…?autoplay=C` → `/firm?tab=decor&deckDemo=treasury`,
+    // bounced off the firm and landed on a cream shell: React reset the frame to
+    // the finished autoplay route, which the app then redirected away from.
+    // Same `id`, so the element (and the continuity stamp) survive; only `src`
+    // changes. If the node is gone, remount — assigning `src` on a null ref is
+    // a silent no-op and the loading cover would sit on empty cream forever.
     believed.current = url
     setLoading(true)
-    if (frame.current) frame.current.src = url
+    if (frame.current) {
+      setRun((current) => {
+        if (current) return { id: current.id, src: url }
+        runCounter.current += 1
+        return { id: runCounter.current, src: url }
+      })
+    } else {
+      startRun(url)
+    }
     // `run` is read, not depended on: including it would re-run the policy on
     // every change and re-decide a decision already taken.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, showStill, sessionId, authEpoch, toggled])
+  }, [index, showStill, sessionId, soloSessionId, authEpoch, toggled])
 
   // --- `L` reloads the current slide's route ------------------------------
-  // The escape hatch for rule 3 above. Imperative rather than through state,
-  // because the point is to reload a URL React already believes is set.
+  // The escape hatch for a stuck embed. Remounts rather than assigning `src`,
+  // because assigning the URL the iframe already holds is a no-op in Chrome.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
       if (event.key.toLowerCase() !== 'l') return
       const target = event.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
-      if (!demo || !frame.current) return
+      if (!demo) return
       event.preventDefault()
+      const src = `${demoConfig.appOrigin}${routeFor(demo, sessionId)}`
+      runCounter.current += 1
+      believed.current = src
+      setRun({ id: runCounter.current, src })
       setLoading(true)
-      frame.current.src = `${demoConfig.appOrigin}${routeFor(demo, sessionId)}`
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -453,6 +485,15 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [demo])
+
+  // Hold the founding office long enough to register — not a flash — then
+  // move through the same toggle path the keyboard uses. The key remains
+  // available for rehearsal and recovery.
+  useEffect(() => {
+    if (!demo?.toggle) return
+    const timer = window.setTimeout(() => toggleDemo(demo), 3_200)
+    return () => window.clearTimeout(timer)
   }, [demo])
 
   /**
@@ -514,15 +555,21 @@ export function DemoStage({ slides, index, stills, annotations, moving }: Props)
 
   const measure = useCallback(() => {
     const slot = getSlot(tracked.current)
-    if (!slot) return
-    const box = slot.getBoundingClientRect()
+    const box = slot?.getBoundingClientRect()
+    // Full-bleed demos size the slot with `inset: 0`. If that chain collapses
+    // (a 0×0 `.demo-screen`), the stage used to return null and the slide was
+    // a cream field with only the caption plate. Fall back to the viewport so
+    // the iframe still paints.
+    const next = box && box.width >= 8 && box.height >= 8
+      ? { left: box.left, top: box.top, width: box.width, height: box.height }
+      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
     setRect((current) => (
-      Math.abs(current.left - box.left) < .5
-        && Math.abs(current.top - box.top) < .5
-        && Math.abs(current.width - box.width) < .5
-        && Math.abs(current.height - box.height) < .5
+      Math.abs(current.left - next.left) < .5
+        && Math.abs(current.top - next.top) < .5
+        && Math.abs(current.width - next.width) < .5
+        && Math.abs(current.height - next.height) < .5
         ? current
-        : { left: box.left, top: box.top, width: box.width, height: box.height }
+        : next
     ))
   }, [])
 

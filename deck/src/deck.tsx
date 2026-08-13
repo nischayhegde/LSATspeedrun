@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 
 import { DemoStage } from './demo/demo-stage'
 import { GridOverview } from './engine/grid'
@@ -42,12 +42,111 @@ function useStage(reduced: boolean) {
   return stage
 }
 
+/**
+ * Clicks that must not advance the deck: real controls, live product
+ * surfaces, and presenter furniture. Iframe clicks never reach this
+ * handler — they stay in the app — so demo slides keep working.
+ */
+const PASS_THROUGH = [
+  'a',
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  'iframe',
+  'canvas',
+  '[role="button"]',
+  '[role="link"]',
+  '[contenteditable="true"]',
+  '.presenter',
+  '.grid-overview',
+  '.deck-qa',
+  '.demo-stage',
+  '.deck-appscene',
+].join(',')
+
+function clickShouldAdvance(event: MouseEvent<HTMLElement>): boolean {
+  if (event.button !== 0) return false
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false
+  const target = event.target
+  if (!(target instanceof Element)) return false
+  if (target.closest(PASS_THROUGH)) return false
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && (selection.toString().length > 0)) return false
+  return true
+}
+
+/** How long demo chrome stays up after the pointer leaves it. */
+const DEMO_CHROME_HOLD_MS = 5000
+
+/**
+ * Live demo slides hide deck chrome until the pointer finds an edge, then
+ * hold it for a few seconds after the pointer leaves. The product iframe
+ * stays full-screen and keeps its own clicks the whole time.
+ */
+function useDemoChrome(isDemo: boolean, slideId: string) {
+  const [visible, setVisible] = useState(false)
+  const hideTimer = useRef(0)
+  const hovering = useRef(false)
+
+  const clearHide = useCallback(() => {
+    window.clearTimeout(hideTimer.current)
+    hideTimer.current = 0
+  }, [])
+
+  const show = useCallback(() => {
+    hovering.current = true
+    clearHide()
+    setVisible(true)
+  }, [clearHide])
+
+  const release = useCallback(() => {
+    hovering.current = false
+    clearHide()
+    hideTimer.current = window.setTimeout(() => {
+      if (!hovering.current) setVisible(false)
+    }, DEMO_CHROME_HOLD_MS)
+  }, [clearHide])
+
+  useEffect(() => {
+    hovering.current = false
+    clearHide()
+    setVisible(false)
+    return clearHide
+  }, [clearHide, isDemo, slideId])
+
+  return { visible: isDemo && visible, show, release, isDemo }
+}
+
 export function Deck() {
   const reduced = useRef(window.matchMedia('(prefers-reduced-motion: reduce)').matches).current
   const stage = useStage(reduced)
   const deck = useDeck(SLIDES, stage)
   const stageHost = useRef<HTMLDivElement | null>(null)
   const [telemetry, setTelemetry] = useState({ frameMs: 0, geometries: 0, textures: 0, cached: 0 })
+  const otherKey = deck.layers.live === 'a' ? 'b' : 'a'
+  const otherIndex = deck.layers[otherKey]
+  const otherScene = otherIndex != null ? SLIDES[otherIndex]?.scene?.id : undefined
+  const liveScene = deck.current.scene?.id
+  // Keep the canvas up while the counsel is still pulling slide 11 on.
+  // `deck.current` is already slide 11 at the start of that move, and hiding
+  // the stage then would cut him off before the pull.
+  const counselSceneUp = !deck.stageParked && (
+    liveScene === 'counsel-stage'
+    || (deck.moving && otherScene === 'counsel-stage')
+  )
+  const stageVisible = Boolean(
+    (liveScene && liveScene !== 'none')
+    || counselSceneUp,
+  )
+
+  const demoChrome = useDemoChrome(deck.current.kind === 'demo', deck.current.id)
+
+  const onDeckClick = useCallback((event: MouseEvent<HTMLElement>) => {
+    if (!clickShouldAdvance(event)) return
+    deck.next()
+  }, [deck])
 
   // The stage's canvas is created by the stage, not by React, because React must
   // never be in a position to replace it.
@@ -58,18 +157,26 @@ export function Deck() {
     return () => stage.canvas.remove()
   }, [stage])
 
-  // A slide that paints a field is an opaque rectangle over the stage canvas,
-  // and eighteen of the twenty-four do. See `occlusion.ts`: while one is being
-  // held, the stage's render and its full-screen post pass are work whose
-  // result nobody can see. `moving` is the safety rule — during a transition
-  // both layers are part-transparent and the stage really is on screen — and a
-  // layout effect rather than an effect so the flag is right before the browser
-  // paints the first frame of the move rather than one frame into it.
+  // The WebGL stage is visible only when it is the current slide's subject.
+  // Earlier versions un-occluded it for every transition, so a field or demo
+  // slide briefly exposed whichever 3D scene happened to be parked underneath.
+  // That read as an unrelated cutaway. Scene-led slides opt in explicitly;
+  // everything else keeps the renderer both hidden and idle.
   useLayoutEffect(() => {
-    const covered = !deck.moving && deck.current.field !== undefined && deck.current.field !== 'scene'
-    setStageOccluded('field', covered)
+    setStageOccluded('field', !stageVisible)
     return () => setStageOccluded('field', false)
-  }, [deck.current.field, deck.moving])
+  }, [stageVisible])
+
+  // The partner's notes-only view may be open on another computer. The Vite
+  // presentation server holds only this tiny cursor, and that view polls it;
+  // no product state, session cookie, or WebGL work crosses the network.
+  useEffect(() => {
+    void fetch('/presenter-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: deck.index, id: deck.current.id }),
+    }).catch(() => undefined)
+  }, [deck.current.id, deck.index])
 
   // Telemetry is polled rather than pushed. The stage runs at 60fps and a state
   // update per frame would put React's commit on the frame budget it is measuring.
@@ -110,10 +217,8 @@ export function Deck() {
         // wants it to feel like a light coming on. `scene` paints nothing at
         // all, so a slide whose subject is the 3D stage stays transparent.
         data-field={slide.field ?? 'scene'}
-        // Which stage scene is behind this layer. Read by the `tier-fly`
-        // override in `transitions.ts`, which is the one transition in the deck
-        // that has to know whether the two slides it is between are looking at
-        // the same 3D object.
+        // Which stage scene belongs to this layer. Kept as metadata for the
+        // transition and QA harnesses.
         data-scene={slide.scene?.id ?? 'none'}
         ref={(element) => deck.registerLayer(key, element)}
         // The layer that is leaving must not swallow a click aimed at the one
@@ -133,8 +238,15 @@ export function Deck() {
   }
 
   return (
-    <div className="deck" data-moving={deck.moving ? '' : undefined}>
-      <div className="deck-stage" ref={stageHost} aria-hidden="true" />
+    <div
+      className="deck"
+      data-moving={deck.moving ? '' : undefined}
+      data-counsel-scene={counselSceneUp ? '' : undefined}
+      data-demo-slide={demoChrome.isDemo ? '' : undefined}
+      data-demo-chrome={demoChrome.isDemo ? (demoChrome.visible ? 'on' : 'off') : undefined}
+      onClick={onDeckClick}
+    >
+      <div className="deck-stage" data-visible={stageVisible ? 'true' : 'false'} ref={stageHost} aria-hidden="true" />
 
       <AppSceneLayer slots={deck.appScenes} />
 
@@ -161,11 +273,45 @@ export function Deck() {
           flight and removed when it settles, so nothing accumulates. */}
       <div className="deck-overlay" ref={deck.overlayRef} aria-hidden="true" />
 
-      {/* Click zones, narrow and at the very edges only. Anything wider would
-          steal clicks from the live demo iframes, which the presenter needs to be
-          able to drive with a mouse. */}
-      <button type="button" className="zone zone-prev" onClick={deck.previous} aria-label="Previous slide" />
-      <button type="button" className="zone zone-next" onClick={deck.next} aria-label="Next slide" />
+      {/* Edge zones remain for previous (left) and as a visible hover
+          affordance. The rest of the slide advances via `onDeckClick` on
+          `.deck`. Live demo iframes never bubble, so they stay interactive. */}
+      <button type="button" className="zone zone-prev" onClick={deck.previous} onPointerEnter={demoChrome.show} onPointerLeave={demoChrome.release} aria-label="Previous slide" />
+      <button type="button" className="zone zone-next" onClick={deck.next} onPointerEnter={demoChrome.show} onPointerLeave={demoChrome.release} aria-label="Next slide" />
+
+      {demoChrome.isDemo ? (
+        <>
+          {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
+            <div
+              key={edge}
+              className={`demo-chrome-sensor demo-chrome-sensor-${edge}`}
+              onPointerEnter={demoChrome.show}
+              onPointerLeave={demoChrome.release}
+              aria-hidden="true"
+            />
+          ))}
+          {demoChrome.visible ? (
+            <>
+              <button
+                type="button"
+                className="demo-chrome-hit demo-chrome-hit-top"
+                onPointerEnter={demoChrome.show}
+                onPointerLeave={demoChrome.release}
+                onClick={deck.next}
+                aria-label="Next slide"
+              />
+              <button
+                type="button"
+                className="demo-chrome-hit demo-chrome-hit-bottom"
+                onPointerEnter={demoChrome.show}
+                onPointerLeave={demoChrome.release}
+                onClick={deck.next}
+                aria-label="Next slide"
+              />
+            </>
+          ) : null}
+        </>
+      ) : null}
 
       {/* The folio, in the bottom-right margin directly above the hairline's
           right-hand end. The deck's two pieces of permanent chrome are now a

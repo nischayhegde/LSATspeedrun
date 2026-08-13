@@ -5,7 +5,7 @@
  * Run it once, after the backend is up and before opening the deck:
  *
  *     cd backend && DEV_AUTH_ENABLED=true ../.venv/bin/python run.py   # port 5001
- *     cd frontend && npm run dev                                       # port 5173
+ *     cd frontend && npm run dev                                       # port 5174
  *     cd deck && npm run prepare-demo
  *     cd deck && npm run dev                                           # port 5180
  *
@@ -35,6 +35,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { launchChromium } from './playwright-env.mjs'
+import { APP_ORIGIN } from '../app-origin.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(DECK_DIR, '..')
@@ -42,7 +43,6 @@ const CONFIG_PATH = resolve(DECK_DIR, 'demo.config.ts')
 const VENV_PYTHON = resolve(REPO_ROOT, '.venv/bin/python')
 
 const BACKEND_ORIGIN = 'http://127.0.0.1:5001'
-const APP_ORIGIN = 'http://localhost:5173'
 const HARNESS_PORT = 5179
 /** `TOUR_STORAGE_KEY` in frontend/src/guided-tour.tsx. Verified 2026-08-10. */
 const TOUR_KEY = 'lsat-tycoon:guided-tour:v6'

@@ -26,6 +26,7 @@ node_modules/
 .rig-verify/
 .strategy-shots/
 .tabs-shots/
+.theme-audit/
 .ui2d/
 .verify/
 .wardrobe-shots/
@@ -113,7 +114,16 @@ frontend/dist-qa*/
 deck/node_modules/
 deck/dist/
 deck/.deck-shots/
+deck/.audit-tmp/
+deck/.counsel-shots/
+deck/.delivery-shots/
+deck/export/
 deck/tsconfig.tsbuildinfo
+
+# Agent scratch and worktree dumps. deploy-sandbox.ps1 runs `git add --all`.
+.audit-tmp/
+deck/.glb-*.mjs
+tools/theme-audit/
 
 # JavaScript compiled out of the deck's TypeScript, which lands beside the source
 # it came from. `npm run typecheck` used to pass `--noEmit false` at a config with

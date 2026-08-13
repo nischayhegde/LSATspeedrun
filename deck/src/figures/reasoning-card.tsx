@@ -19,8 +19,8 @@ import { pct, usePhase, vars, type FigureBody } from './kit'
  * evidence weaker.
  */
 
-/** Cumulative milliseconds: card, emphasis shift, reasoning, coaching, effect bars. */
-const MARKS = [40, 700, 1500, 2600, 3300] as const
+/** Cumulative milliseconds: explanation, coaching, then the two feedback levels. */
+const MARKS = [40, 700, 1500] as const
 
 /** Per-word reveal of the written reasoning. Fast enough to read as typing rather than as a list. */
 const WORD_STAGGER_MS = 22
@@ -31,25 +31,16 @@ const EFFECT_STAGGER_MS = 320
 export function ReasoningCard({ spec, active, reduced }: FigureBody<ReasoningCardFigure>) {
   const phase = usePhase(active, reduced, MARKS)
   const segments = splitAround(spec.reasoning, spec.underline)
-  const peak = Math.max(...spec.effects.map((effect) => Math.abs(effect.value)), Number.EPSILON)
+  const effects = spec.effects.slice(0, 2)
+  const peak = Math.max(...effects.map((effect) => Math.abs(effect.value)), Number.EPSILON)
 
   let wordIndex = 0
 
   return (
     <div className="fig-rc">
-      <div className="fig-rc-card" data-focused={phase >= 2 ? 'true' : 'false'} style={{ opacity: phase >= 1 ? 1 : 0 }}>
-        <p className="fig-rc-stem">{spec.stem}</p>
-
-        <ol className="fig-rc-choices" data-receded={phase >= 2 ? 'true' : 'false'}>
-          {spec.choices.map((choice, index) => (
-            <li key={choice} style={vars({ '--fig-delay': `${index * 40}ms` })}>
-              <i>{String.fromCharCode(65 + index)}</i>
-              <span>{choice}</span>
-            </li>
-          ))}
-        </ol>
-
-        <div className="fig-rc-box" data-focused={phase >= 2 ? 'true' : 'false'}>
+      <div className="fig-rc-card" data-focused="true" style={{ opacity: phase >= 1 ? 1 : 0 }}>
+        <p className="fig-rc-stem">Your explanation · answer (B)</p>
+        <div className="fig-rc-box" data-focused="true">
           <p className="fig-rc-written">
             {segments.map((segment, segmentIndex) => {
               const words = segment.text.split(/(\s+)/).filter((part) => part.length > 0)
@@ -60,7 +51,7 @@ export function ReasoningCard({ spec, active, reduced }: FigureBody<ReasoningCar
                   <span
                     className="fig-rc-word"
                     key={`word-${segmentIndex}-${index}`}
-                    style={vars({ opacity: phase >= 3 ? 1 : 0, '--fig-delay': delay })}
+                    style={vars({ opacity: phase >= 1 ? 1 : 0, '--fig-delay': delay })}
                   >
                     {word}
                   </span>
@@ -73,7 +64,7 @@ export function ReasoningCard({ spec, active, reduced }: FigureBody<ReasoningCar
                 <span
                   className="fig-rc-mark"
                   key={`seg-${segmentIndex}`}
-                  data-marked={phase >= 4 ? 'true' : 'false'}
+                  data-marked={phase >= 2 ? 'true' : 'false'}
                 >
                   {body}
                 </span>
@@ -81,21 +72,22 @@ export function ReasoningCard({ spec, active, reduced }: FigureBody<ReasoningCar
                 <span key={`seg-${segmentIndex}`}>{body}</span>
               )
             })}
-            <span className="fig-rc-caret" data-live={phase >= 2 ? 'true' : 'false'} />
           </p>
         </div>
 
         <div
           className="fig-rc-coach"
-          style={{ transform: phase >= 4 ? 'translateY(0)' : 'translateY(102%)' }}
+          style={{ transform: phase >= 2 ? 'translateY(0)' : 'translateY(102%)' }}
         >
           <span className="fig-rc-coach-tag" />
-          <p className="fig-rc-coach-clause">{spec.underline}</p>
+          <div>
+            <p className="fig-rc-coach-clause">Fixed criteria → strength · first error · clean path</p>
+          </div>
         </div>
       </div>
 
       <ol className="fig-rc-effects">
-        {spec.effects.map((effect, index) => (
+        {effects.map((effect, index) => (
           <li
             key={effect.label}
             data-emphasis={effect.emphasis ? 'true' : 'false'}
@@ -108,7 +100,7 @@ export function ReasoningCard({ spec, active, reduced }: FigureBody<ReasoningCar
             <span className="fig-rc-effect-track">
               <span
                 className="fig-rc-effect-run"
-                style={{ width: phase >= 5 ? pct(Math.abs(effect.value) / peak) : '0%' }}
+                style={{ width: phase >= 3 ? pct(Math.abs(effect.value) / peak) : '0%' }}
               />
             </span>
           </li>

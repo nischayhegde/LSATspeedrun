@@ -1,7 +1,5 @@
-import type { CSSProperties } from 'react'
-
 import type { GateFigure } from './types'
-import { usePhase, vars, type FigureBody } from './kit'
+import { usePhase, type FigureBody } from './kit'
 
 /**
  * `game-never-gates` — the app's own unlock list, and the one row with no lock.
@@ -46,77 +44,27 @@ import { usePhase, vars, type FigureBody } from './kit'
  * — nothing to wait for is the point — and last the quotation.
  */
 
-/** Cumulative milliseconds: head, the locked names, their locks, the rule, the open row, the quote. */
-const MARKS = [40, 300, 620, 1320, 1560, 2000] as const
-
-/** Between the locked rows. Slow enough to be read as a list, not a reveal. */
-const ROW_STAGGER_MS = 150
+/** The office arrives first, then the map, then the access rule. */
+const MARKS = [40, 420, 980] as const
 
 export function Gate({ spec, active, reduced }: FigureBody<GateFigure>) {
   const phase = usePhase(active, reduced, MARKS)
 
   return (
-    <div className="fig-gt">
-      <p className="fig-gt-head" style={{ opacity: phase >= 1 ? 1 : 0 }}>{spec.head}</p>
-
-      <ul className="fig-gt-list">
-        {spec.locked.map((item, index) => (
-          <li
-            className="fig-gt-row"
-            key={item.name}
-            style={vars({ opacity: phase >= 2 ? 1 : 0, '--fig-delay': `${index * ROW_STAGGER_MS}ms` })}
-          >
-            {/* The well is drawn on every row, including the open one, so the
-                last row's emptiness is a gap in a column rather than a shorter
-                line of text. A missing padlock is only legible where a padlock
-                was expected. */}
-            <span className="fig-gt-well">
-              <Padlock
-                shut={phase >= 3}
-                style={vars({ '--fig-delay': `${index * ROW_STAGGER_MS + 120}ms` })}
-              />
-            </span>
-            <span className="fig-gt-name">{item.name}</span>
-            <span
-              className="fig-gt-requires"
-              style={vars({ opacity: phase >= 3 ? 1 : 0, '--fig-delay': `${index * ROW_STAGGER_MS + 120}ms` })}
-            >
-              {item.requires}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      {/* Draws rather than fades, so the row beneath reads as arriving after
-          the list and not as part of it. */}
-      <span className="fig-gt-rule" style={{ transform: `scaleX(${phase >= 4 ? 1 : 0})` }} />
-
-      <div className="fig-gt-row" data-open="true" style={{ opacity: phase >= 5 ? 1 : 0 }}>
-        <span className="fig-gt-well" />
-        <span className="fig-gt-name">{spec.open.name}</span>
-        <span className="fig-gt-requires">{spec.open.requires}</span>
+    <div className="fig-gt-gallery">
+      <div className="fig-gt-office" style={{ opacity: phase >= 1 ? 1 : 0 }}>
+        <img src="/stills/demo-office-tier14.webp" alt="The fully built Lawyer Tycoon office" />
+        <span>Cases build the firm</span>
       </div>
-
-      <p className="fig-gt-quote" style={{ opacity: phase >= 6 ? 1 : 0 }}>
-        <q>{spec.quote}</q>
-        <small>{spec.quoteCredit}</small>
-      </p>
+      <div className="fig-gt-map" style={{ opacity: phase >= 2 ? 1 : 0 }}>
+        <img src="/stills/demo-map.webp" alt="The Lawyer Tycoon career map" />
+        <span>Cases expand the world</span>
+      </div>
+      <div className="fig-gt-access" style={{ opacity: phase >= 3 ? 1 : 0 }}>
+        <small>ALWAYS OPEN</small>
+        <b>{spec.open.name}</b>
+        <span>{spec.open.requires}</span>
+      </div>
     </div>
-  )
-}
-
-/**
- * The app's lock chip is a 12px Lucide `Lock`, which is a rounded shackle over
- * a rounded body. Redrawn here rather than imported because the deck does not
- * take the icon dependency, and because this one has to *shut*: the shackle
- * drops into the body on its row's beat, which is the only motion on the
- * figure and the reason the empty well at the bottom is noticed at all.
- */
-function Padlock({ shut, style }: { shut: boolean; style?: CSSProperties }) {
-  return (
-    <svg className="fig-gt-lock" data-shut={shut ? 'true' : 'false'} viewBox="0 0 24 24" style={style} aria-hidden="true">
-      <path className="fig-gt-shackle" d="M 8 11 V 7.5 a 4 4 0 0 1 8 0 V 11" />
-      <rect className="fig-gt-body" x="4.5" y="10.5" width="15" height="10" rx="2" />
-    </svg>
   )
 }

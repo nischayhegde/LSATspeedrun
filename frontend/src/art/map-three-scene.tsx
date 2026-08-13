@@ -8784,7 +8784,11 @@ export function MapThreeScene({
     let targetYaw = 0
     let targetPitch = 0
     let zoom = 1
-    let cameraMode: 'counsel' | 'overview' = 'counsel'
+    // `home` is the authored district survey. The camera is placed at that
+    // atlas pose on mount, then lerps toward `cameraMode`; starting in counsel
+    // would dolly in to the HQ close-up. Deck `final-map` sends `home` so the
+    // whole district stays readable.
+    let cameraMode: 'counsel' | 'overview' = cameraCommand.action === 'home' ? 'overview' : 'counsel'
 
     // Ambient drift, so the world is never a still photograph.
     //

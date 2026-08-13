@@ -1,7 +1,7 @@
 /**
  * Is the app dev server actually up?
  *
- * The demo slides frame `http://localhost:5173`. When that server is not
+ * The demo slides frame `APP_ORIGIN` from `deck/app-origin.mjs` (`http://localhost:5174`). When that server is not
  * running the iframe renders the browser's own "connection refused" page,
  * which is the worst possible thing to have on a projector, so every demo
  * slide asks this first and falls back to a still image if the answer is no.

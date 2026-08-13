@@ -71,7 +71,7 @@ const ok = (text) => { notes.push(text); console.log(`  \u2713 ${text}`) }
  * A page that reports its own console and page errors into `sink`.
  *
  * Errors raised *inside a demo slide's iframe* are excluded, and that is not
- * laziness: a demo slide frames `localhost:5173`, and in a throwaway Playwright
+ * laziness: a demo slide frames the app origin, and in a throwaway Playwright
  * profile that app is not signed in, so it correctly logs a run of 401s and a
  * Google Identity origin complaint. Those are the app's, on the app's origin, and
  * collecting them here would mean this harness could never pass. Anything without

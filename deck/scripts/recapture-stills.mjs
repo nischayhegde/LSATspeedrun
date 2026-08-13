@@ -11,7 +11,7 @@
  *   node scripts/recapture-stills.mjs --only=focus-mode,map
  *   node scripts/recapture-stills.mjs --list
  *
- * Requires the app on :5173 and the backend on :5001, a seeded demo account
+ * Requires the app on :5174 and the backend on :5001, a seeded demo account
  * (`cd deck && npm run reset-demo`), and `cwebp` on PATH — see `encodeStill`.
  *
  * Three things here are deliberate and worth not "simplifying":
@@ -42,6 +42,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
 import { launchChromium } from './playwright-env.mjs'
 
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -53,7 +54,7 @@ const flags = new Map(process.argv.slice(2).map((raw) => {
 }))
 
 /** `localhost`, never `127.0.0.1` — the app's cookies are `SameSite=Lax`. */
-const APP = (flags.get('app') || 'http://localhost:5173').replace(/\/$/, '')
+const APP = (flags.get('app') || APP_ORIGIN).replace(/\/$/, '')
 const EMAIL = flags.get('email') || 'student@localhost.test'
 const OUT = resolve(DECK_DIR, flags.get('out') || 'public/stills')
 
@@ -354,14 +355,9 @@ const STILLS = [
   // and for the same reason: no slide has ever named it. `/firm?tab=upgrades`
   // is the route to put back if one does.
   {
-    key: 'focus-mode',
-    file: 'demo-focus-mode.webp',
-    // The Office rather than the Firm or the Map: the audience has just watched
-    // the office demo, so "the Office is put away" has a referent, and this
-    // route's copy names three game systems at once. The frame has to carry the
-    // claim "the game never gates practice" on its own.
-    route: '/office',
-    focus: true,
+    key: 'firm',
+    file: 'demo-firm.png',
+    route: '/firm?tab=upgrades&deckDemo=firm',
   },
 ]
 
@@ -585,16 +581,19 @@ try {
       }
     }
 
-    // Playwright encodes PNG or JPEG and nothing else, so the shutter writes a
-    // PNG to a scratch path and `encodeStill` turns it into the WebP that ships.
-    // Written beside the target and moved into place only once the bytes exist,
-    // so an interrupted run cannot leave a truncated image as the fallback.
+    // Playwright writes the firm ledger directly as PNG because its flat UI
+    // compresses well without an additional encoder. The scene captures still
+    // use WebP, written beside the target and moved only once bytes exist.
     const target = resolve(OUT, still.file)
     const shot = resolve(OUT, `.tmp-${still.file}.png`)
     await page.screenshot({ path: shot, animations: 'disabled' })
-    const encoded = encodeStill(shot, resolve(OUT, `.tmp-${still.file}`))
-    unlinkSync(shot)
-    renameSync(encoded.staging, target)
+    if (still.file.endsWith('.png')) {
+      renameSync(shot, target)
+    } else {
+      const encoded = encodeStill(shot, resolve(OUT, `.tmp-${still.file}`))
+      unlinkSync(shot)
+      renameSync(encoded.staging, target)
+    }
     const kb = Math.round(statSync(target).size / 1024)
     ok(`wrote ${still.file} at ${Math.round(LOGICAL.width * SCALE)}x${Math.round(LOGICAL.height * SCALE)}`
       + ` (${kb} KB, ${encoded.mode})`)

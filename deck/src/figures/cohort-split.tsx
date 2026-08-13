@@ -38,8 +38,8 @@ import './cohort-split.css'
  * normally drawn and cannot be read as a journey.
  */
 
-/** Cumulative marks: track, fill, retreat, then one input row each. */
-const MARKS = [40, 520, 1180, 1780, 2260] as const
+/** Cumulative marks: track, fill, retreat, then the score-bearing input. */
+const MARKS = [40, 520, 1180, 1780] as const
 
 export function CohortSplit({ spec, active, reduced }: FigureBody<CohortSplitFigure>) {
   const phase = usePhase(active, reduced, MARKS)
@@ -52,10 +52,6 @@ export function CohortSplit({ spec, active, reduced }: FigureBody<CohortSplitFig
           distributes its slack, which is what keeps the caption tight under the
           slide's standfirst instead of stranded halfway down the stage. */}
       <div className="fig-cs-cohort">
-        <p className="fig-cs-lede" style={{ opacity: phase >= 1 ? 1 : 0 }}>
-          {spec.cohortLabel}
-        </p>
-
         {/* The footprint. Present from the first beat at full width, so the fill
             retreating inside it reads as the cohort shrinking rather than as the
             figure resizing. */}
@@ -75,10 +71,12 @@ export function CohortSplit({ spec, active, reduced }: FigureBody<CohortSplitFig
         </div>
       </div>
 
-      {/* What the same study measured against a real LSAT score. Two rows, and
-          the argument is that they are not the same length. */}
+      {/* Keep the score-bearing result in the composition. The video's null
+          result remains in the source credit and speaker notes; drawing it as a
+          second full row made the defensive caveat compete with the finding and
+          was the row repeatedly clipped at shorter stage heights. */}
       <ol className="fig-cs-inputs">
-        {spec.inputs.map((input, index) => {
+        {spec.inputs.filter((input) => input.emphasis).map((input, index) => {
           const shown = phase >= 4 + index
           return (
             <li

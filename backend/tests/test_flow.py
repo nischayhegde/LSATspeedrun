@@ -3740,6 +3740,34 @@ def test_a_replacement_profile_can_repurchase_an_asset_the_ledger_still_records(
         assert {created["id"], restarted["id"]} == {row.source_id.split(":")[0] for row in rows}
 
 
+def test_same_profile_can_repurchase_after_the_asset_row_is_removed(app):
+    """stage_demo rewind: asset gone, ledger still there, live buy must not 500."""
+
+    client = app.test_client()
+    headers = login(client, "treasury-rewind@example.test")
+    created = create_game(client, headers)
+    desk_cost = ASSET_BY_KEY["repaired_desk"]["cost"]
+
+    with app.app_context():
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = desk_cost * 2
+        db.session.commit()
+    assert client.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=headers).status_code == 200
+
+    with app.app_context():
+        PlayerAsset.query.filter_by(profile_id=created["id"], asset_key="repaired_desk").delete()
+        profile = PlayerProfile.query.filter_by(id=created["id"]).one()
+        profile.cash = desk_cost
+        db.session.commit()
+        assert LedgerEntry.query.filter_by(user_id=profile.user_id, kind="asset_purchase").count() == 1
+        assert PlayerAsset.query.filter_by(profile_id=created["id"], asset_key="repaired_desk").count() == 0
+
+    repeated = client.post("/v1/game/purchases", json={"asset_key": "repaired_desk"}, headers=headers)
+    assert repeated.status_code == 200
+    assert repeated.json["game"]["cash"] == 0
+    assert "repaired_desk" in repeated.json["game"]["owned_assets"]
+
+
 def test_profile_scoped_ledger_keys_let_each_playthrough_record_the_same_content(app):
     from app.game import _ledger, _scoped_source
 

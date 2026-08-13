@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 
+import { createDemoCursor, waitForPainted } from './demo-cursor'
 import {
   easeScroll,
   frameScrollTop,
@@ -426,6 +427,14 @@ export function useAutoplay(inputs: AutoplayInputs): void {
         giveUp(`key says ${label}, which this question does not offer`)
         return
       }
+      const cursor = createDemoCursor()
+      signal.addEventListener('abort', () => cursor.destroy(), { once: true })
+      const actuate = async (selector: string, fallback: () => void) => {
+        const node = await waitForPainted(selector, ARM_TIMEOUT_MS, signal)
+        if (signal.aborted) return
+        if (node) await cursor.hoverClick(node, { hoverMs: dwell.hoverMs, signal })
+        else fallback()
+      }
       if (!startedRef.current) {
         startedRef.current = true
         await settleLayout(signal)
@@ -437,7 +446,12 @@ export function useAutoplay(inputs: AutoplayInputs): void {
         await frameOn(strategySpan())
         await sleep(dwell.strategyMs, signal)
         if (signal.aborted) return
-        latest.current.applyStrategy()
+        await actuate('.strategy-tip-use', () => latest.current.applyStrategy())
+        await waitFor(
+          () => Boolean(document.querySelector('.strategy-tip.is-applied, .strategy-tip-recorded')),
+          ARM_TIMEOUT_MS,
+          signal,
+        )
         // Taking the approach up can unfold a panel beneath the card, which
         // moves everything under it. Frame after that has happened, not before.
         await sleep(dwell.appliedMs, signal)
@@ -456,12 +470,32 @@ export function useAutoplay(inputs: AutoplayInputs): void {
       await frameOn(choicesSpan())
       await sleep(dwell.choicesMs, signal)
       if (signal.aborted) return
-      latest.current.select(label)
+      const choiceNode = [...document.querySelectorAll<HTMLElement>('.answer-card .choice')]
+        .find((el) => el.querySelector('.choice-label')?.textContent?.trim() === label)
+      if (choiceNode) await cursor.hoverClick(choiceNode, { hoverMs: dwell.hoverMs, signal })
+      else latest.current.select(label)
+      await waitFor(
+        () => Boolean(document.querySelector('.answer-card .choice.selected')),
+        ARM_TIMEOUT_MS,
+        signal,
+      )
       await sleep(dwell.selectMs, signal)
       if (signal.aborted) return
 
-      const failure = await submitAnswer()
-      if (failure && !signal.aborted) giveUp(failure)
+      await actuate('.verdict-button', () => latest.current.submit())
+      cursor.hide()
+      // The hover-click already pressed submit. Wait for the verdict; only
+      // retry through the handler if that click never landed a result.
+      await waitFor(
+        () => Boolean(latest.current.resultId) || latest.current.submitFailed,
+        SUBMIT_TIMEOUT_MS,
+        signal,
+      )
+      if (!signal.aborted && !latest.current.resultId) {
+        const failure = await submitAnswer()
+        if (failure && !signal.aborted) giveUp(failure)
+      }
+      cursor.destroy()
     }
 
     /**

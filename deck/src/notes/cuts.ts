@@ -51,7 +51,7 @@ export const CUT_ORDER: readonly CutItem[] = [
     action: 'drop',
     secondsSaved: 14,
     how:
-      'Alan names two of the four Clark splits over the office transformation instead. Gross −17, three seconds handed '
+      'Alan names the loop in one sentence over the treasury demo instead. Gross −17, three seconds handed '
       + 'back, net −14.',
   },
   {
@@ -96,8 +96,7 @@ export const DO_NOT_CUT: readonly string[] = [
   'pov-reasoning-is-the-work',
   'pov-ai-never-answers',
   'demo-case-answer',
-  'demo-office-transformation',
-  'game-never-gates',
+  'game-by-design',
   'close-one-stop-shop',
 ]
 

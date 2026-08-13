@@ -318,6 +318,8 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
   const isOnCaseRoute = /^\/cases\/[^/]+/.test(location.pathname)
   const isActiveCase = isOnCaseRoute && !chromeRestored
   const isWideScene = /^\/(office|map)\/?$/.test(location.pathname)
+  const deckDemoKind = new URLSearchParams(location.search).get('deckDemo')
+  const isDeckDemo = Boolean(deckDemoKind)
   const isFocusMode = user.assistance_level === 'focus'
   const visibleNavItems = isFocusMode ? navItems.filter((item) => FOCUS_MODE_ROUTES.has(item.to)) : navItems
   const visibleMobileNavItems = isFocusMode ? mobileNavItems.filter((item) => FOCUS_MODE_ROUTES.has(item.to)) : mobileNavItems
@@ -392,7 +394,7 @@ export function AppShell({ user, game, children }: { user: User; game?: GameStat
        activation of those native elements dispatches a click that bubbles here,
        so keyboard users get the same cue without a separate key listener. */
     /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
-    <div className={`app-shell ${isActiveCase ? 'active-case' : ''} ${isWideScene ? 'wide-scene-shell' : ''}`} onClick={playDataSound}>
+    <div className={`app-shell ${isActiveCase ? 'active-case' : ''} ${isWideScene ? 'wide-scene-shell' : ''} ${isDeckDemo ? 'is-deck-demo' : ''}`} data-deck-demo={deckDemoKind || undefined} onClick={playDataSound}>
       <header className="app-header">
         <Brand caseFile={isActiveCase} />
         {game && !isActiveCase && (

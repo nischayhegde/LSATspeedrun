@@ -51,14 +51,15 @@ export type SlideKind =
 /** Named 3D scenes the deck can show. Bound to slides, not to layouts. */
 export type SceneId =
   | 'hero'
-  | 'cast'
-  /** The close: a bare royal-blue room with the app's own counsel in it. */
+  /** `close-one-stop-shop`: a bare royal-blue room with the app's own counsel in it. */
   | 'close-room'
+  /** Slide 10: one male counsel on an empty spotlighted stage. */
+  | 'counsel-stage'
+  /** Volume-burns: navy cyc, three falling sheets, centre lockup. */
+  | 'burnout'
   | 'office'
   | 'office-transform'
   | 'map'
-  | 'tiers'
-  | 'metrics'
   | 'none'
 
 /**
@@ -87,10 +88,8 @@ export type TransitionKind =
   | 'ink-bleed'
   /** The app's `.cutscene-overlay` letterbox, `steps()` easing, #05080d bars. */
   | 'letterbox'
-  /** One shared scene, camera flies between framings. No blend at all. */
+  /** Opacity + short translate between slides. Named for history; not a dolly. */
   | 'camera'
-  /** Headline glyphs transformed individually; Fraunces weight interpolation. */
-  | 'type'
   /** The scales-of-justice seal as an animated gold-foil mask. */
   | 'foil-seal'
   /** The floor: a short push-dissolve, for beats that should not announce themselves. */

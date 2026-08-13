@@ -108,11 +108,8 @@ export const WARNINGS: readonly WarningItem[] = [
     body:
       'The founders\' notes cited "a large study in the Journal of IT Education" for virtual-currency gamification. '
       + 'No such source exists, and "massively improved participation and focus" is not supportable by anything that does. '
-      + 'It has been replaced with Meng et al., where points correlated with all four measured engagement dimensions '
-      + '(skills ρ = .146, emotional ρ = .274, participation ρ = .248, performance ρ = .293) while badges correlated with '
-      + "only one, and Sailer & Homner's meta-analysis at g = 0.49 cognitive, g = 0.36 motivational, g = 0.25 behavioral. "
-      + 'Those are small-to-moderate numbers. Do not say "massively."',
-    slides: ['pov-virtual-currency'],
+      + 'The currency slide was removed in Revision 11. Dicheva et al. 2023 stays in CITATIONS.md §6 for Q&A only.',
+    slides: ['game-by-design'],
   },
   {
     number: 7,
@@ -142,7 +139,7 @@ export const WARNINGS: readonly WarningItem[] = [
       'Taking question-type choice away is the one POV with no brainlift source, and it sits in tension with Ryan & Deci. '
       + 'The argument survives, reframed as structure rather than control, inside the concept slide and the close, '
       + 'with Focus Mode as the autonomy valve.',
-    slides: ['concept-lawyer-tycoon', 'demo-focus-mode', 'close-one-stop-shop'],
+    slides: ['concept-lawyer-tycoon', 'close-one-stop-shop'],
   },
   {
     number: 10,

@@ -118,7 +118,7 @@
   --folio-ink: var(--blue);
   /* The warm grey `deck.css` uses for dimmed ink on paper, not a tint of the
      navy: diluted ink is what a hairline folio on a printed page looks like. */
-  --folio-dim: #6a6a7d;
+  --folio-dim: var(--muted);
   opacity: .78;
 }
 

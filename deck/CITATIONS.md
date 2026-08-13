@@ -558,3 +558,25 @@ None of these is a research claim and none needs an outside source. What they ne
 - **The card is the app's `strategy-tip` section** from `frontend/src/case-flow.tsx`, down to both buttons. The refusal button is drawn on purpose: the control arm is made of the questions where a student pressed it.
 
 ---
+
+# 10. Burnout — `pov-volume-burns`
+
+Added 2026-08-13. This slide is the bridge after `pov-volume-is-the-constraint`: the volume that moves the score is the volume people cannot finish. **There is no LSAT-specific burnout RCT to headline.** Everything below is either already in this file, or the closest published number, labelled as such.
+
+**On-screen credit** names the hours sources, RR 21-01's 51%, von der Embse 2018, and Putwain & Daly 2014. Spoken copy does not name papers.
+
+| Claim the slide is allowed to support | Source | Exact finding | Caveat |
+| --- | --- | --- | --- |
+| Prep companies recommend 150–300 hours | Princeton Review, Blueprint, Kaplan — **§3.1 of this file** | Same numbers already on `problem-hours-and-price` | Recommendations, not measured study time |
+| 51% never completed one practice exam | LSAC RR 21-01 — **§7** | *"About 51% of Khan users did not complete an LSAT practice exam."* n = 12,471 descriptive | Already on the previous slide; this slide is the *why* |
+| High test anxiety is common | Putwain & Daly (2014), *Educational Studies* 40(5); Thomas et al. (2017). Huntley et al. (2022), *BMC Psychology* 10:6, cites ~25% of college students highly test-anxious | Recent reviews put high test anxiety at **15–22%** (Putwain & Daly; Thomas), ~**25%** in the college synthesis Huntley quotes | Not LSAT-specific. Do not say "LSAT students" |
+| Test anxiety tracks lower scores on high-stakes tests | von der Embse, N. P., Jester, D., Roy, D., & Post, J. (2018). *Test anxiety effects, predictors, and correlates: A 30-year meta-analytic review.* **Journal of Affective Disorders 227, 483–493.** https://doi.org/10.1016/j.jad.2017.11.048 | 238 studies. Test anxiety negatively related to standardized tests, university entrance exams, and GPA. Reported range **r = −.13 to −.40** | Meta-analysis across ages and tests, not an LSAT sample |
+| Cognitive test anxiety and SAT | Cassady, J. C., & Johnson, R. E. (2002). *Cognitive Test Anxiety and Academic Performance.* **Contemporary Educational Psychology 27, 270–295.** (often cited as 2004 in secondary sources; the journal issue is 2002) | n = 168 undergraduates. High CTA associated with self-reported SAT **1001** vs **1109** for low CTA | Association, self-reported SAT, small sample, not LSAT. Q&A only |
+| LSAT/MCAT students were studied for exam stress | Frattaroli, J., Thomas, M., & Lyubomirsky, S. (2011). *Opening up in the classroom: Effects of expressive writing on graduate school entrance exam performance.* **Emotion 11(3), 691–706.** https://doi.org/10.1037/a0022946 | n = 104 (GRE 48, MCAT 38, **LSAT 15**). Expressive writing lowered pre-exam depressive symptoms; performance benefit in the LSAT/MCAT subgroup, not GRE | **n = 15 LSAT.** Too small to headline. Usable only as "this population was in the sample" |
+| Law-student mental health | Organ, J. M., Jaffe, D. B., & Bender, K. M. (2016) and later LSAC-supported work (e.g. Flynn, Li & Sánchez) | Depression / anxiety symptoms in law school | **After admission, not LSAT prep.** Do not put on this slide. Q&A only, as the culture they are walking toward |
+
+**What the slide must not say.** That a named study measured "LSAT burnout." That 51% dropped out of prep because of anxiety (RR 21-01 does not say why). That 150–300 hours were observed. That gamification has been shown to prevent burnout — `game-by-design` is the delivery loop, not a clinical claim.
+
+**`pov-virtual-currency` was removed in Revision 11.** Dicheva et al. (2023) stays in §6 for Q&A. Do not put the 1.3× / 2.5× / 3.7× multiples back on a slide.
+
+---

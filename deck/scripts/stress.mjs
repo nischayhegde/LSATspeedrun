@@ -57,6 +57,8 @@ import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { APP_ORIGIN } from '../app-origin.mjs'
+
 const DECK_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PLAYWRIGHT = process.env.DECK_PLAYWRIGHT || '/private/tmp/pwrt/node_modules/playwright/index.mjs'
 const GL_ARGS = ['--use-gl=angle', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
@@ -99,7 +101,7 @@ function findChrome() {
  *
  * Everything here is a consequence of the product not running beside the deck,
  * which is the normal state of this harness's environment. A demo slide's embed
- * cannot reach `localhost:5173`, and the deck's preflight cannot reach the
+ * cannot reach the app origin, and the deck's preflight cannot reach the
  * backend. Neither is a defect in the deck, and a report that calls them one is
  * a report nobody reads to the end.
  */
@@ -108,7 +110,7 @@ const EXPECTED = [
   /Failed to load resource/,
   /502 \(Bad Gateway\)/,
   /demo-api/,
-  /localhost:5173/,
+  new RegExp(APP_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
   /\[vite\] connect/,
 ]
 const isExpected = (text) => EXPECTED.some((pattern) => pattern.test(text))

@@ -64,6 +64,9 @@ from app.coaching import (  # noqa: E402
 from app.extensions import db  # noqa: E402
 from app.models import (  # noqa: E402
     Attempt,
+    LedgerEntry,
+    PlayerAsset,
+    PlayerProfile,
     Question,
     QuestionChoice,
     ReviewQueueItem,
@@ -72,6 +75,7 @@ from app.models import (  # noqa: E402
     User,
     utcnow,
 )
+from app.game import ASSET_BY_KEY, _scoped_source  # noqa: E402
 from app.seed import SOURCE_PREFIX  # noqa: E402
 from app.services import (  # noqa: E402
     _feedback,
@@ -99,6 +103,10 @@ DEMO_QUESTION_ID = "hf-lsat-lr:199809_3-LR2_8_9"
 # rather than the multi-step boxing and negation sequences — so the scratchpad
 # step cannot eat the clock even if it is exercised.
 DEMO_STRATEGY_KEY = "prephrase"
+
+# Cosmetics the treasury slide buys live. Seed leaves this unowned; rehearsals
+# often buy it. Staging puts it back so the cash drop is not a no-op.
+LIVE_PURCHASE_COSMETIC = "trophy_shelf"
 
 # Marks the pre-graded twin attempt so a rerun can find and replace it.
 STAGE_VERDICT_KEY = "stage:verdict:"
@@ -278,8 +286,12 @@ def _fixture_store(question: Question, selected_label: str, reasoning: str, coac
     return f"{'replaced' if replaced else 'added'} the {label} capture in {FIXTURE_PATH.name}"
 
 
-def _assert_local_only(app) -> None:
+def _assert_local_only(app, *, allow_deployed: bool = False) -> None:
     """Refuse to touch anything that is not an obvious local database."""
+    if allow_deployed:
+        if os.getenv("ALLOW_DEPLOYED_DEMO_SEED") != "1":
+            raise SystemExit("Set ALLOW_DEPLOYED_DEMO_SEED=1 to stage a deployed database.")
+        return
     url = db.engine.url
     host = (url.host or "").lower()
     if url.drivername.startswith("postgresql") and host not in {"", "localhost", "127.0.0.1"}:
@@ -392,6 +404,54 @@ def _silence_guided_tour(user: User) -> bool:
     user.guided_tour_completed_at = utcnow()
     db.session.commit()
     return True
+
+
+def _restore_live_purchase(user: User, asset_key: str = LIVE_PURCHASE_COSMETIC) -> dict:
+    """Unown the cosmetic the treasury slide buys, and refund what was spent.
+
+    The live demo is a cash drop: buy something, watch the wallet fall, watch
+    the office pick it up. If a rehearsal already owns `trophy_shelf`, the
+    purchase button is Installed and the sequence silently no-ops. Seed leaves
+    it unowned; this puts it back that way every time we stage.
+    """
+    catalog = ASSET_BY_KEY.get(asset_key) or {}
+    list_price = int(catalog.get("cost") or 0)
+    profile = PlayerProfile.query.filter_by(user_id=user.id).first()
+    if profile is None:
+        return {"restored": False, "refunded": 0, "price": list_price}
+
+    # The purchase writes `uq_ledger_source` on (user, asset_purchase, profile:key).
+    # Deleting only the asset leaves that row, and the next live buy 500s. Clear
+    # it even when the shelf is already unowned — a prior restore can leave just
+    # the ledger behind.
+    stale_ledger = LedgerEntry.query.filter_by(
+        user_id=user.id,
+        kind="asset_purchase",
+        source_id=_scoped_source(profile, asset_key),
+    ).all()
+    for row in stale_ledger:
+        db.session.delete(row)
+
+    owned = PlayerAsset.query.filter_by(profile_id=profile.id, asset_key=asset_key).all()
+    if not owned:
+        if stale_ledger:
+            db.session.commit()
+            return {"restored": True, "refunded": 0, "price": list_price}
+        return {"restored": False, "refunded": 0, "price": list_price}
+
+    refunded = 0
+    for row in owned:
+        refunded += int(row.purchase_price or 0)
+        db.session.delete(row)
+
+    if refunded <= 0:
+        refunded = list_price
+    if refunded > 0:
+        profile.cash = int(profile.cash or 0) + refunded
+        profile.lifetime_spending = max(0, int(profile.lifetime_spending or 0) - refunded)
+
+    db.session.commit()
+    return {"restored": True, "refunded": refunded, "price": list_price}
 
 
 def _stage_open_case(user: User, question: Question, *, avoid_ids: set[str] | None = None) -> dict:
@@ -1270,13 +1330,18 @@ def main() -> int:
         ),
     )
     parser.add_argument("--apply", action="store_true", help="Write the changes.")
+    parser.add_argument(
+        "--allow-deployed",
+        action="store_true",
+        help="Stage a deployed database. Requires ALLOW_DEPLOYED_DEMO_SEED=1. Does not enable DEV_AUTH.",
+    )
     args = parser.parse_args()
     if args.capture_coaching and args.no_model:
         raise SystemExit("--capture-coaching has nothing to capture under --no-model.")
 
     app = create_app({"AUTO_SEED": False})
     with app.app_context():
-        _assert_local_only(app)
+        _assert_local_only(app, allow_deployed=args.allow_deployed)
         if args.capture_coaching and not provider_ready():
             raise SystemExit(
                 "--capture-coaching needs a working coach: set TFY_API_KEY and TFY_URL. "
@@ -1310,6 +1375,7 @@ def main() -> int:
         # are allowed to end up paused first, then stage the open case so it
         # ends up in_progress, then re-open the driven run behind it.
         tour_silenced = _silence_guided_tour(user)
+        live_purchase = _restore_live_purchase(user)
         autoplay = _stage_autoplay_run(
             user,
             count=AUTOPLAY_ITEM_COUNT,
@@ -1348,6 +1414,7 @@ def main() -> int:
                 "solo": solo,
                 "autoplay": autoplay,
                 "guided_tour": "silenced now" if tour_silenced else "already silenced",
+                "live_purchase": live_purchase,
             },
             indent=2,
             default=str,

@@ -21,11 +21,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { api } from '../api'
 import { ErrorNotice, formatMoney, LoadingScreen } from '../components'
+import { createDemoCursor, demoSleep, waitForPainted } from '../demo/demo-cursor'
 import { ClientPortrait, PixelAssetArtwork, StaffRoster } from '../game-art'
 import { PixelStudyScenery } from '../art/pixel-scenery'
 import { RivalWarRoom } from '../rival-war-room'
 import { useSound } from '../sound'
-import { MOTION_TIMING } from '../motion'
+import { MOTION_TIMING, useRollupInt } from '../motion'
 import type { CharacterGender, GameAsset, GameClient, GameState } from '../types'
 import { effectiveClient, storeGame, useGame } from './shared'
 // The rules in `styles.css` that only this screen can render.
@@ -72,6 +73,9 @@ export function FirmPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { play } = useSound()
+  const deckDemoKind = searchParams.get('deckDemo')
+  const deckDemo = deckDemoKind === 'firm'
+  const deckTreasury = deckDemoKind === 'treasury'
   const initial = (searchParams.get('tab') as FirmTab) || 'upgrades'
   const [tab, setTab] = useState<FirmTab>(firmTabs.some((item) => item.key === initial) ? initial : 'upgrades')
 
@@ -79,10 +83,119 @@ export function FirmPage() {
     const requested = searchParams.get('tab') as FirmTab | null
     if (requested && firmTabs.some((item) => item.key === requested)) setTab(requested)
   }, [searchParams])
-  const [catalogView, setCatalogView] = useState<'all' | 'ready' | 'owned'>('all')
-  const [catalogRegion, setCatalogRegion] = useState('all')
   const queryClient = useQueryClient()
   const gameQuery = useGame()
+  const [catalogView, setCatalogView] = useState<'all' | 'ready' | 'owned'>('all')
+  const [catalogRegion, setCatalogRegion] = useState('all')
+  const [demoBeat, setDemoBeat] = useState(0)
+  useEffect(() => {
+    if (!deckDemo || gameQuery.isLoading) return
+    let cancelled = false
+    const cursor = createDemoCursor()
+    const abort = new AbortController()
+    setTab('upgrades')
+    setCatalogView('all')
+    setDemoBeat(0)
+    void (async () => {
+      await demoSleep(1_800, abort.signal)
+      if (cancelled) return
+      const filterBar = await waitForPainted('.catalog-view-buttons', 8_000, abort.signal)
+      if (cancelled || !filterBar) return
+      const ready = Array.from(filterBar.querySelectorAll<HTMLButtonElement>('button'))
+        .find((button) => button.textContent?.trim().toLowerCase() === 'ready')
+      if (!ready) return
+      cursor.showAt(window.innerWidth * 0.42, window.innerHeight * 0.28)
+      await cursor.hoverClick(ready, { hoverMs: 980, moveMs: 560, signal: abort.signal })
+      if (cancelled) return
+      setDemoBeat(1)
+      await demoSleep(2_400, abort.signal)
+      if (cancelled) return
+      const staffTab = await waitForPainted('#firm-tab-staff', 8_000, abort.signal)
+      if (cancelled || !staffTab) return
+      await cursor.hoverClick(staffTab, { hoverMs: 860, moveMs: 520, signal: abort.signal })
+      if (cancelled) return
+      setDemoBeat(2)
+      await waitForPainted('.firm-staff-roster', 4_000, abort.signal)
+      await demoSleep(2_800, abort.signal)
+      cursor.hide()
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+      cursor.destroy()
+    }
+  }, [deckDemo, gameQuery.isLoading])
+  const TREASURY_ASSET = 'trophy_shelf'
+  useEffect(() => {
+    if (!deckTreasury || gameQuery.isLoading) return
+    let cancelled = false
+    const cursor = createDemoCursor()
+    const abort = new AbortController()
+    setTab('decor')
+    setCatalogView('all')
+    setDemoBeat(0)
+    void (async () => {
+      const wallet = await waitForPainted('.firm-wallet', 8_000, abort.signal)
+      if (cancelled) return
+      window.scrollTo({ top: 0, behavior: 'auto' })
+      const preferred = await waitForPainted(`[data-asset-key="${TREASURY_ASSET}"]`, 8_000, abort.signal)
+      const purchasable = preferred?.querySelector<HTMLButtonElement>('.purchase-row .primary-button:not(:disabled)')
+        ? preferred
+        : Array.from(document.querySelectorAll<HTMLElement>('[data-asset-key]')).find((card) => (
+          Boolean(card.querySelector('.purchase-row .primary-button:not(:disabled)'))
+        )) ?? preferred
+      const card = purchasable
+      if (!card) {
+        if (!cancelled) navigate('/office?deckDemo=treasury')
+        return
+      }
+      await demoSleep(wallet ? 800 : 500, abort.signal)
+      if (cancelled) return
+      const buyRow = card.querySelector<HTMLElement>('.purchase-row') ?? card
+      const walletBox = wallet?.getBoundingClientRect()
+      const buyBox = buyRow.getBoundingClientRect()
+      const bothFit = Boolean(walletBox && (buyBox.bottom - walletBox.top) <= window.innerHeight - 16)
+      if (bothFit && wallet) {
+        wallet.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      } else if (buyBox.bottom > window.innerHeight - 8 || buyBox.top < 8) {
+        buyRow.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }
+      await demoSleep(450, abort.signal)
+      if (cancelled) return
+      const buy = card.querySelector<HTMLButtonElement>('.purchase-row .primary-button')
+      const cashNode = document.querySelector('.firm-wallet strong')
+      const cashBefore = cashNode?.textContent
+      setDemoBeat(1)
+      if (buy && !buy.disabled) {
+        cursor.showAt(window.innerWidth * 0.55, window.innerHeight * 0.22)
+        await cursor.hoverClick(buy, { hoverMs: 680, moveMs: 500, signal: abort.signal })
+      } else if (buy) {
+        cursor.showAt(window.innerWidth * 0.55, window.innerHeight * 0.22)
+        await cursor.hoverClick(buy, { hoverMs: 680, moveMs: 500, peek: true, signal: abort.signal })
+      }
+      if (cancelled) return
+      const deadline = performance.now() + 4_000
+      while (!cancelled && performance.now() < deadline) {
+        if (document.querySelector('.firm-wallet strong')?.textContent !== cashBefore) break
+        if (card.classList.contains('just-bought') || card.classList.contains('owned')) break
+        await demoSleep(80, abort.signal)
+      }
+      const walletNow = document.querySelector('.firm-wallet')
+      const walletNowBox = walletNow?.getBoundingClientRect()
+      if (walletNow && walletNowBox && (walletNowBox.bottom < 8 || walletNowBox.top > window.innerHeight - 8)) {
+        walletNow.scrollIntoView({ block: 'start', behavior: 'auto' })
+      }
+      await demoSleep(550, abort.signal)
+      if (cancelled) return
+      cursor.hide()
+      if (!cancelled) navigate('/office?deckDemo=treasury')
+    })()
+    return () => {
+      cancelled = true
+      abort.abort()
+      cursor.destroy()
+    }
+  }, [deckTreasury, gameQuery.isLoading, navigate])
   const currentCaseQuery = useQuery({ queryKey: ['current-session'], queryFn: api.currentSession, enabled: tab === 'clients' })
   const [justBought, setJustBought] = useState<string | null>(null)
   const [justActivated, setJustActivated] = useState<string | null>(null)
@@ -124,8 +237,12 @@ export function FirmPage() {
     },
   })
 
+  const rolledCash = useRollupInt(gameQuery.data?.game?.cash, 520)
+
   if (gameQuery.isLoading) return <LoadingScreen />
   const game = gameQuery.data!.game!
+  const shownCash = deckTreasury && typeof rolledCash === 'number' ? rolledCash : game.cash
+  const cashDropping = deckTreasury && typeof rolledCash === 'number' && rolledCash !== game.cash
   const typeMap: Record<FirmTab, GameAsset['type'] | null> = { upgrades: 'upgrade', decor: 'cosmetic', staff: 'staff', clients: null, connections: 'connection', rivals: 'rival', achievements: null }
   const assets = game.catalog.assets.filter((item) => item.type === typeMap[tab])
   const regions = Array.from(new Set([
@@ -173,14 +290,41 @@ export function FirmPage() {
     void play('select', { seed: next, intensity: .25 })
     setCatalogView(next)
   }
+  const demoCopy = deckTreasury
+    ? [
+      ['Case fees in the treasury', 'The cash number is earned by answering questions, not by waiting.'],
+      ['Buy with those fees', 'The trophy shelf is a real purchase. Watch the treasury drop.'],
+      ['The office takes the object', 'That spend appears in the room. Practice is what grew the firm.'],
+    ] as const
+    : [
+      ['Case fees in the treasury', 'Completed questions fund the firm. The ledger shows what those earnings buy.'],
+      ['Ready, against live gates', 'The catalog filters on cash, reputation, tier, and prerequisites.'],
+      ['Staff render in the office', 'Hires are not a separate collection. They appear back in the room.'],
+    ] as const
 
   return (
-    <div className="firm-page page-wrap">
+    <div className="firm-page page-wrap" data-deck-demo={deckTreasury ? 'treasury' : deckDemo ? 'firm' : undefined}>
+      {(deckDemo || deckTreasury) && (
+        <div className="deck-demo-sequence" data-live="true" aria-hidden="true">
+          <span data-state={demoBeat === 0 ? 'active' : 'complete'}>{deckTreasury ? '01 · Treasury' : '01 · Case fees'}</span>
+          <i />
+          <span data-state={demoBeat === 1 ? 'active' : demoBeat > 1 ? 'complete' : 'next'}>{deckTreasury ? '02 · Purchase' : '02 · Ready upgrades'}</span>
+          <i />
+          <span data-state={demoBeat === 2 ? 'active' : 'next'}>{deckTreasury ? '03 · Office updates' : '03 · Staff in office'}</span>
+        </div>
+      )}
+      {(deckDemo || deckTreasury) && (
+        <div className="deck-demo-caption" key={demoBeat} aria-live="polite">
+          <small>{deckTreasury ? 'FEES → FIRM' : 'FIRM LOOP'} · {String(demoBeat + 1).padStart(2, '0')}</small>
+          <strong>{demoCopy[demoBeat][0]}</strong>
+          <span>{demoCopy[demoBeat][1]}</span>
+        </div>
+      )}
       <section className="page-heading firm-ledger-heading">
         <PixelStudyScenery variant="ledger" className="firm-ledger-scenery" />
         <div className="firm-heading-copy"><span className="eyebrow">THE PARTNERS' LEDGER · MANAGE THE FIRM</span><h1>Build a legendary practice.</h1><p>Spend case fees on a living, growing office. Every improvement appears in your firm and makes the next case worth more.</p><div className="ledger-rule"><i /><span>§</span><i /></div></div>
-        <div className="firm-wallet">
-          <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(game.cash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
+          <div className={`firm-wallet${cashDropping ? ' is-dropping' : ''}`}>
+          <div className="wallet-clasp"><i /><i /></div><small>FIRM TREASURY</small><strong>{formatMoney(shownCash)}</strong><span><Star size={15} /> {game.reputation.toFixed(1)} Reputation</span>
           <span className={`wallet-lease ${game.upkeep.rent_arrears ? 'has-arrears' : ''}`}><CircleDollarSign size={15} /> {game.upkeep.completed ? 'Lease retired' : `${formatMoney(game.upkeep.daily_rent)} daily rent${game.upkeep.rent_arrears ? ` · ${formatMoney(game.upkeep.rent_arrears)} due` : ''}`}</span>
           <button
             className="appearance-button"
@@ -274,7 +418,7 @@ export function FirmPage() {
       ) : (
         <div className="management-grid asset-management-grid">
           {visibleAssets.map((item) => (
-            <article key={item.key} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
+            <article key={item.key} data-asset-key={item.key} className={`management-card asset-card asset-card-${item.type} ${item.owned ? 'owned' : ''} ${!item.available && !item.owned ? 'locked' : ''} ${justBought === item.key ? 'just-bought' : ''}`}>
               <PixelAssetArtwork asset={item} />
               <div className="card-status">{item.owned ? <><Check size={13} /> OWNED</> : item.available ? 'AVAILABLE' : <><Lock size={12} /> LOCKED</>}</div>
               <div className="asset-card-copy"><span className="asset-card-number">ASSET {String(assets.indexOf(item) + 1).padStart(2, '0')} · {item.region?.toUpperCase()}</span><h3>{item.name}</h3><p>{item.description}</p></div><div className="benefit-pill"><Sparkles size={14} /><span><small>GAME EFFECT</small>{item.benefit}</span></div>

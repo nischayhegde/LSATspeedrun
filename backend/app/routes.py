@@ -607,6 +607,7 @@ def get_session_history():
             g.current_user,
             limit=request.args.get("limit", 20),
             offset=request.args.get("offset", 0),
+            mode=request.args.get("mode"),
         )
     except history.InvalidHistoryParameter as exc:
         return error("invalid_parameter", str(exc), 400)

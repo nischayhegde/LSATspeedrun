@@ -101,6 +101,8 @@ function Mark() {
 
 export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
   const [plateShown, setPlateShown] = useState(arrival === 'immediate' || reduced)
+  const showDiagnostics = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).has('hud')
   const shutter = useRef<HTMLDivElement | null>(null)
   const plate = useRef<HTMLDivElement | null>(null)
   /** Guards against a second Enter arriving mid-sweep. */
@@ -339,13 +341,17 @@ export function StartScreen({ onEnter, arrival, reduced, slideCount }: Props) {
             </p>
           </footer>
 
-          {/* The demo preflight. On the start card because this is the screen
-              that is up while the laptop is still being plugged in, and because
-              running it is also what resolves the live case session id that the
-              demo slides point at. See `demo/preflight-strip.tsx`. */}
-          <div className="start-preflight">
-            <PreflightStrip />
-          </div>
+          {/* Preflight still runs on every load in `StartGate`; only its verbose
+              diagnostic surface is opt-in. A failed local service used to place
+              a large error panel over the founders, seal and start action—the
+              audience-facing cover looked broken before the talk began. Open
+              `?hud` during rehearsal to inspect the same checks without making
+              them part of the presentation. */}
+          {showDiagnostics ? (
+            <div className="start-preflight">
+              <PreflightStrip />
+            </div>
+          ) : null}
         </div>
       ) : null}
 

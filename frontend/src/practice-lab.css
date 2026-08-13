@@ -118,7 +118,7 @@
    stretched across the row, so it stays the lighter option rather than a
    second CTA fighting the gold button above it for width. */
 .practice-run-alt { justify-self: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; gap: 14px; }
-.practice-run-or { display: inline-flex; align-items: center; gap: 8px; color: #7f959b; font-family: var(--font-pixel, inherit); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.practice-run-or { display: inline-flex; align-items: center; gap: 8px; color: #7f959b; font-family: var(--font-pixel); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .practice-run-or::before,
 .practice-run-or::after { content: ""; width: 14px; height: 1px; background: rgba(244,234,212,.18); }
 /* Ghost pill rather than a filled bar: an outline this size read as a
@@ -354,6 +354,24 @@
 .practice-guide[open] > .practice-guide-body { animation: mo-rise var(--mo-3) var(--mo-out) both; }
 .practice-guide > summary { transition: color var(--mo-1) linear, background var(--mo-1) linear; }
 .practice-guide > summary:hover { background: rgba(255,255,255,.03); }
+
+/* Deck mega demo: the sitting lives on this tab now. Hide the Cases header
+   and Help so the mega panel, clock terms, and past sitting fill the frame. */
+.practice-lab[data-deck-demo='mega'] .practice-action,
+.practice-lab[data-deck-demo='mega'] .practice-guide {
+  display: none;
+}
+.practice-lab[data-deck-demo='mega'] .practice-tabs {
+  margin-bottom: 4px;
+}
+.practice-lab[data-deck-demo='mega'] .mega-panel {
+  box-shadow: 0 0 0 1px rgba(240, 210, 127, .28), 0 22px 48px rgba(5, 9, 15, .38);
+}
+.practice-lab[data-deck-demo='mega'] .mega-terms li:hover,
+.practice-lab[data-deck-demo='mega'] .mega-terms li:focus-visible {
+  border-left-color: #f0d27f;
+  background: rgba(240, 210, 127, .12);
+}
 
 /* A phone has no pointer to meet, so a lift is dead weight — and a tap
    that leaves a row raised reads as a stuck state rather than as a

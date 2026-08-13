@@ -5,7 +5,12 @@
  * seeds the account, reads the session id out of the seeder's report, and
  * rewrites `liveSessionId` below in place. Editing it yourself is the manual
  * escape hatch for when the seeder cannot run.
+ *
+ * The app origin is not edited here. It lives in `app-origin.mjs` so the
+ * deck, the health probe, and every demo script share one port.
  */
+import { APP_ORIGIN } from './app-origin.mjs'
+
 export type DemoConfig = {
   /**
    * Origin the app dev server is on.
@@ -15,12 +20,12 @@ export type DemoConfig = {
    * `lsat_csrf`) are `SameSite=Lax`, so they only ride along with a framed
    * request when the framing document and the frame are the same site. Site is
    * compared by host, not by port, so `localhost:5180` framing
-   * `localhost:5173` is same-site and stays signed in, while `127.0.0.1:5180`
-   * framing `localhost:5173` is *cross*-site and lands on the login screen —
+   * `localhost:5174` is same-site and stays signed in, while `127.0.0.1:5180`
+   * framing `localhost:5174` is *cross*-site and lands on the login screen —
    * the two spellings of loopback are different sites to the browser. Opening
    * the deck from `file://` fails the same way.
    *
-   * Point this at the Vite dev server (5173), never at the backend (5001):
+   * Point this at the Vite dev server (5174), never at the backend (5001):
    * every `/v1` response carries `X-Frame-Options: DENY`.
    */
   appOrigin: string
@@ -29,7 +34,7 @@ export type DemoConfig = {
    * origin above.
    *
    * The bar used to print `appOrigin` verbatim, so every demo slide showed an
-   * audience of investors the string `localhost:5173`. The frame is styled as
+   * audience of investors the string `localhost:5174`. The frame is styled as
    * the product's own chrome — engine-turned plate, gold mark, monospace — and
    * the one piece of text in it said "this is a dev server on a laptop".
    *
@@ -124,8 +129,6 @@ export type DemoConfig = {
  */
 const FORCE_STILLS = false
 
-const APP_ORIGIN = 'http://localhost:5173'
-
 /**
  * Whether framing the app can work *on the machine the deck is open on*, which
  * is a narrower question than "is the app running" and is the one that has to
@@ -136,18 +139,18 @@ const APP_ORIGIN = 'http://localhost:5173'
  * request only when the framing document and the frame are the same site, and
  * site is compared by host. So the deck's own hostname has to *be* the app
  * origin's hostname. On the presenting machine it is — `localhost:5180` frames
- * `localhost:5173` — and nothing about the live demo changes.
+ * `localhost:5174` — and nothing about the live demo changes.
  *
  * Everywhere else it is not, and the old answer was a hardcoded `useStills:
- * false` that made the deck probe `localhost:5173` and embed whatever replied.
+ * false` that made the deck probe `localhost:5174` and embed whatever replied.
  * A deck opened on a laptop that happened to be running an unrelated dev server
- * on 5173 put that stranger's app on screen in place of the product, with no
+ * on 5174 put that stranger's app on screen in place of the product, with no
  * still. Even against a dead port the probe is asynchronous, so one iframe was
- * dispatched at `localhost:5173/cases/…?autoplay=C` before the fallback won.
+ * dispatched at `localhost:5174/cases/…?autoplay=C` before the fallback won.
  * Answering synchronously here means no such iframe is ever constructed.
  *
  * This also catches the footgun the runbook can only warn about: opening the
- * deck as `127.0.0.1:5180` is cross-site to `localhost:5173`, so it used to
+ * deck as `127.0.0.1:5180` is cross-site to `localhost:5174`, so it used to
  * frame six login screens. Now it shows six stills and the lamp reads `stills`.
  *
  * `?live=1` overrides it, for the case this cannot see: a host alias that is

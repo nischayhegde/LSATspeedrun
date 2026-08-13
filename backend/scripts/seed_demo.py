@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import shutil
 import sys
@@ -161,7 +162,11 @@ def _fraction(*parts: object) -> float:
     return int.from_bytes(digest[:8], "big") / float(2**64)
 
 
-def _assert_local_only(app, email: str) -> None:
+def _assert_local_only(app, email: str, *, allow_deployed: bool = False) -> None:
+    if allow_deployed:
+        if os.getenv("ALLOW_DEPLOYED_DEMO_SEED") != "1":
+            raise RuntimeError("Set ALLOW_DEPLOYED_DEMO_SEED=1 to seed a deployed database.")
+        return
     uri = str(app.config["SQLALCHEMY_DATABASE_URI"])
     if app.config.get("ENV") == "production" or not app.config.get("DEV_AUTH_ENABLED"):
         raise RuntimeError("Demo seeding requires DEV_AUTH_ENABLED=true outside production.")
@@ -1340,11 +1345,16 @@ def main() -> int:
     parser.add_argument("--email", default=DEFAULT_EMAIL)
     parser.add_argument("--apply", action="store_true", help="Write the demo state. Without this flag nothing changes.")
     parser.add_argument("--no-backup", action="store_true", help="Skip the automatic pre-seed database copy.")
+    parser.add_argument(
+        "--allow-deployed",
+        action="store_true",
+        help="Seed a deployed database. Requires ALLOW_DEPLOYED_DEMO_SEED=1. Does not enable DEV_AUTH.",
+    )
     args = parser.parse_args()
 
     app = create_app({"AUTO_SEED": False, "DIAGNOSTIC_SESSION_SIZE": DIAGNOSTIC_QUESTIONS})
     with app.app_context():
-        _assert_local_only(app, args.email)
+        _assert_local_only(app, args.email, allow_deployed=args.allow_deployed)
         if not args.apply:
             user = User.query.filter_by(email=args.email).first()
             print(json.dumps(

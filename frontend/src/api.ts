@@ -275,7 +275,7 @@ export const api = {
   sessionReview: (id: string) => request<{ review: SessionReview }>(`/study-sessions/${id}/review`),
   acknowledgeSessionReview: (id: string) =>
     request<{ session: StudySession; brief_complete: boolean }>(`/study-sessions/${id}/review/acknowledge`, { method: 'POST' }),
-  sessionHistory: (params: { limit?: number; offset?: number } = {}) =>
+  sessionHistory: (params: { limit?: number; offset?: number; mode?: 'practice' | 'diagnostic' } = {}) =>
     request<{ sessions: HistorySession[]; total: number; limit: number; offset: number; has_more: boolean }>(
       `/history/sessions${historyQuery(params)}`,
     ),

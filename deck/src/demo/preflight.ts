@@ -1,5 +1,5 @@
 import { demoConfig, liveDemoIsPossibleHere } from '../../demo.config'
-import { getStatus, setStatus } from './demo-runtime'
+import { getDemoSessions, getStatus, loadDeployedDemoSessions, setStatus } from './demo-runtime'
 import { probeApp } from './health'
 
 /**
@@ -109,7 +109,7 @@ async function getJson<T>(path: string, timeoutMs: number): Promise<{ status: nu
  * firm" button calls. It is CSRF-exempt (`AUTH_EXEMPT_PATHS`) and refuses to
  * exist unless `DEV_AUTH_ENABLED` is set, so it cannot be reached in production.
  * Called through `/demo-api`, which makes it same-origin, so the `Set-Cookie`
- * lands on host `localhost` — and cookies ignore the port, so the app on :5173
+ * lands on host `localhost` — and cookies ignore the port, so the app on :5174
  * is signed in by a request made from the deck on :5180.
  *
  * Only called when `/me` has already answered 401, which is what makes it
@@ -124,7 +124,7 @@ async function establishSession(timeoutMs: number): Promise<{ ok: boolean; statu
       credentials: 'same-origin',
       cache: 'no-store',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: demoConfig.demoEmail }),
+      body: JSON.stringify({ email: getDemoSessions().demoEmail }),
       signal: controller.signal,
     })
     return { ok: response.ok, status: response.status }
@@ -141,8 +141,8 @@ async function establishSession(timeoutMs: number): Promise<{ ok: boolean; statu
  *
  * The app's cookies are `SameSite=Lax`, so a framed app page stays signed in only
  * when the framing document is on the same *site*. Site is compared by host and
- * not by port, so `localhost:5180` framing `localhost:5173` is same-site and
- * `127.0.0.1:5180` framing `localhost:5173` is not — the two spellings of
+ * not by port, so `localhost:5180` framing `localhost:5174` is same-site and
+ * `127.0.0.1:5180` framing `localhost:5174` is not — the two spellings of
  * loopback are different sites to the browser. Verified empirically: framing from
  * `127.0.0.1` bounces to `/login` every time.
  */
@@ -175,6 +175,8 @@ function checkOrigin(): Check {
  * what is broken, so it cannot be a thing that breaks.
  */
 export async function runPreflight(): Promise<PreflightResult> {
+  await loadDeployedDemoSessions()
+  const sessions = getDemoSessions()
   // Nothing below can help a deck that is not on the presenting machine, and
   // all of it hurts there. Every check is a question about a laptop this page
   // cannot reach, so each one fails, and the failures are rendered as a plate
@@ -191,8 +193,8 @@ export async function runPreflight(): Promise<PreflightResult> {
   if (!liveDemoIsPossibleHere()) {
     return {
       checks: [],
-      sessionId: demoConfig.liveSessionId,
-      sessionSource: demoConfig.liveSessionId ? 'pinned' : 'none',
+      sessionId: sessions.liveSessionId,
+      sessionSource: sessions.liveSessionId ? 'pinned' : 'none',
       ok: true,
       mode: 'stills',
     }
@@ -215,7 +217,8 @@ export async function runPreflight(): Promise<PreflightResult> {
   let current = firstCurrent
   /** Null when nothing was attempted, which is the common case. */
   let signIn: { ok: boolean; status: number } | null = null
-  if (me.status === 401 && health.body) {
+  const publicHttps = window.location.protocol === 'https:'
+  if (me.status === 401 && health.body && !publicHttps) {
     signIn = await establishSession(8000)
     if (signIn.ok) {
       ;[me, current] = await Promise.all([
@@ -261,9 +264,17 @@ export async function runPreflight(): Promise<PreflightResult> {
       label: 'Signed in',
       state: 'ok',
       detail: signIn
-        ? `signed in automatically as ${me.body.email ?? demoConfig.demoEmail} — nothing to do`
-        : `already signed in as ${me.body.email ?? demoConfig.demoEmail}`,
+        ? `signed in automatically as ${me.body.email ?? sessions.demoEmail} — nothing to do`
+        : `already signed in as ${me.body.email ?? sessions.demoEmail}`,
     }
+    : publicHttps && me.status === 401
+      ? {
+        id: 'auth',
+        label: 'Signed in',
+        state: 'bad',
+        detail: `sign in with Google as ${sessions.demoEmail} at ${demoConfig.appOrigin}/login, then reload /pitch/. `
+          + 'Development sign-in is disabled on this public deploy.',
+      }
     : signIn && signIn.status === 404
       ? {
         id: 'auth',
@@ -291,9 +302,27 @@ export async function runPreflight(): Promise<PreflightResult> {
           : { id: 'auth', label: 'Signed in', state: 'warn', detail: 'could not check — the backend did not answer /v1/me' }
 
   const resolved = current.body?.session?.id ?? ''
-  const pinned = demoConfig.liveSessionId
+  const pinned = sessions.liveSessionId
   let sessionId = resolved || pinned
   let sessionSource: PreflightResult['sessionSource'] = resolved ? 'resolved' : pinned ? 'pinned' : 'none'
+
+  let soloSessionId = sessions.soloSessionId
+  if (soloSessionId && me.body) {
+    const solo = await getJson<{ session?: { id?: string; total_items?: number; status?: string } }>(
+      `/study-sessions/${soloSessionId}`,
+      8_000,
+    )
+    if (solo.status === 404 || !solo.body?.session) {
+      const active = await getJson<{ sessions?: Array<{ id: string; total_items: number; status: string }> }>(
+        '/study-sessions/active',
+        8_000,
+      )
+      const replacement = (active.body?.sessions ?? []).find(
+        (run) => run.total_items === 1 && (run.status === 'in_progress' || run.status === 'paused'),
+      )
+      soloSessionId = replacement?.id || ''
+    }
+  }
 
   let session: Check
   if (resolved && resolved === pinned) {
@@ -336,8 +365,8 @@ export async function runPreflight(): Promise<PreflightResult> {
   // without a cookie and is sitting on `/login`, and the stage has to be told that
   // the same URL will answer differently if asked again.
   setStatus(signIn?.ok
-    ? { sessionId, authEpoch: getStatus().authEpoch + 1 }
-    : { sessionId })
+    ? { sessionId, soloSessionId, authEpoch: getStatus().authEpoch + 1 }
+    : { sessionId, soloSessionId })
 
   return { checks, sessionId, sessionSource, ok: !checks.some((check) => check.state === 'bad'), mode: 'live' }
 }
